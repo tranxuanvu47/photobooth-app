@@ -1,0 +1,138 @@
+<div class="camera-capture" [class.is-mobile]="isMobile()">
+  
+  <div class="rotate-overlay" *ngIf="isMobile()">
+    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+      <path d="M12 18h.01"></path>
+    </svg>
+    <h3>Please Rotate Your Device</h3>
+    <p>Landscape mode is required for the best experience.</p>
+  </div>
+
+  <div class="camera-header">
+    <h3 class="camera-title">Camera</h3>
+    
+    <div class="camera-controls" *ngIf="!isCameraActive()">
+      <button class="btn btn-primary" (click)="startCamera()">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="10" cy="10" r="7"/>
+          <circle cx="10" cy="10" r="3"/>
+        </svg>
+        Start Camera
+      </button>
+      
+      <label class="btn btn-secondary">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Upload Photo
+        <input type="file" accept="image/*" (change)="handleFileUpload($event)" hidden>
+      </label>
+    </div>
+  </div>
+
+  <!-- Camera Error -->
+  <div class="camera-error" *ngIf="cameraError()">
+    <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="24" cy="24" r="20"/>
+      <line x1="24" y1="16" x2="24" y2="26"/>
+      <circle cx="24" cy="32" r="1" fill="currentColor"/>
+    </svg>
+    <p>{{ cameraError() }}</p>
+  </div>
+
+  <!-- Camera Active View -->
+  <div class="camera-view" *ngIf="isCameraActive() && !capturedImage()">
+    <div class="video-container">
+      <video #video autoplay playsinline muted [style.display]="'block'"></video>
+      
+      <!-- Countdown Overlay -->
+      <div class="countdown-overlay" *ngIf="isCountingDown()">
+        <div class="countdown-circle">
+          <span class="countdown-number">{{ countdownValue() }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="camera-actions">
+      <!-- Countdown Selector -->
+      <div class="countdown-selector">
+        <label>Timer:</label>
+        <select [(ngModel)]="selectedCountdown" class="countdown-select">
+          <option *ngFor="let option of countdownOptions" [value]="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </div>
+
+      <!-- Capture Button -->
+      <button 
+        class="btn btn-primary btn-lg capture-btn" 
+        (click)="capture()"
+        [disabled]="isCountingDown()"
+      >
+        <svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="none"/>
+          <circle cx="12" cy="12" r="6"/>
+        </svg>
+        <span>{{ isCountingDown() ? 'Capturing...' : 'Capture' }}</span>
+      </button>
+
+      <!-- Device Selector -->
+      <div class="device-selector" *ngIf="availableDevices().length > 1">
+        <button 
+          class="btn btn-secondary btn-icon"
+          (click)="showDeviceSelector.set(!showDeviceSelector())"
+          title="Switch Camera"
+        >
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M18 6 l2 -2 M6 6 L4 4"/>
+          </svg>
+        </button>
+
+        <div class="device-dropdown" *ngIf="showDeviceSelector()">
+          <button 
+            *ngFor="let device of availableDevices()"
+            class="device-option"
+            [class.active]="selectedDeviceId() === device.deviceId"
+            (click)="switchCamera(device.deviceId)"
+          >
+            {{ device.label }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Stop Camera -->
+      <button class="btn btn-secondary" (click)="stopCamera()">
+        Stop Camera
+      </button>
+    </div>
+  </div>
+
+  <!-- Captured Photo Preview -->
+  <div class="photo-preview" *ngIf="capturedImage()">
+    <img [src]="capturedImage()" alt="Captured photo">
+    
+    <div class="preview-actions">
+      <button class="btn btn-secondary" (click)="retake()">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+          <path d="M3 3v5h5"/>
+        </svg>
+        Retake
+      </button>
+      
+      <button class="btn btn-success" (click)="usePhoto()">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 6 9 17l-5-5"/>
+        </svg>
+        Use Photo
+      </button>
+    </div>
+  </div>
+</div>
+

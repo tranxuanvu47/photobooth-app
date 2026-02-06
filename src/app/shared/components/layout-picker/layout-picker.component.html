@@ -1,0 +1,37 @@
+<div class="layout-picker">
+  <h3 class="picker-title">Choose Layout</h3>
+  
+  <div class="layout-grid">
+    <div 
+      *ngFor="let preset of presets"
+      class="layout-card"
+      [class.selected]="selectedPreset() === preset.key"
+      (click)="selectLayout(preset.key)"
+    >
+      <div class="layout-preview" [attr.data-slots]="preset.type">
+        <div class="preview-container" [style.aspect-ratio]="preset.width / preset.height">
+          <div 
+            *ngFor="let slot of preset.slots"
+            class="preview-slot"
+            [style.left.%]="(slot.x / preset.width) * 100"
+            [style.top.%]="(slot.y / preset.height) * 100"
+            [style.width.%]="(slot.width / preset.width) * 100"
+            [style.height.%]="(slot.height / preset.height) * 100"
+          ></div>
+        </div>
+      </div>
+      
+      <div class="layout-info">
+        <h4 class="layout-name">{{ preset.name }}</h4>
+        <p class="layout-details">{{ preset.type }} photo{{ preset.type > 1 ? 's' : '' }}</p>
+      </div>
+      
+      <div class="selected-indicator" *ngIf="selectedPreset() === preset.key">
+        <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+

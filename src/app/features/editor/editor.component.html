@@ -1,0 +1,223 @@
+<div class="editor-page" [class.is-mobile]="isMobile()">
+  <!-- Mobile Rotate Overlay -->
+  <!-- <div class="rotate-overlay">
+    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+      <path d="M12 18h.01"></path>
+    </svg>
+    <h3>Please Rotate Your Device</h3>
+    <p>Landscape mode is required for the best experience.</p>
+  </div> -->
+  <!-- Header - Reduced height -->
+  <header class="editor-header">
+    <div class="header-content">
+      <h1 class="header-title">Photo Booth</h1>
+    </div>
+  </header>
+
+  <!-- Main Layout -->
+  <main class="editor-main">
+    <!-- Center: Camera or Canvas -->
+    <div class="center-view">
+      <!-- Camera Live View (Always On) -->
+      <div class="camera-view-main" *ngIf="capturedPhotos().length === 0">
+        <div class="camera-feed">
+          <video #video autoplay playsinline muted [style.transform]="'rotate(' + cameraRotation() + 'deg)'"></video>
+
+          <!-- Rotate Camera Button -->
+          <button class="rotate-camera-btn" (click)="rotateCamera()" title="Rotate Camera">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
+          </button>
+
+          <!-- Canvas Preview removed - showing camera preview only -->
+
+          <!-- Countdown Overlay (during capture) -->
+          <div
+            class="countdown-overlay"
+            *ngIf="isCapturing() && countdownValue() > 0"
+          >
+            <div class="countdown-circle">
+              <span class="countdown-number">{{ countdownValue() }}</span>
+            </div>
+          </div>
+
+          <!-- Progress Indicator (during capture) -->
+          <div class="capture-progress" *ngIf="isCapturing()">
+            <div class="progress-text">
+              Photo {{ currentPhotoIndex() + 1 }} of {{ totalPhotos() }}
+            </div>
+            <div class="progress-bar">
+              <div
+                class="progress-fill"
+                [style.width.%]="
+                  ((currentPhotoIndex() + 1) / totalPhotos()) * 100
+                "
+              ></div>
+            </div>
+          </div>
+
+          <!-- Capture Controls Container -->
+          <div class="capture-ui-container" *ngIf="!isCapturing()">
+            <!-- Hint Text -->
+            <div class="capture-hint-section">
+              <p class="capture-hint">
+                Click to capture or press <kbd>Enter</kbd>
+              </p>
+              <p class="capture-info">
+                {{ totalPhotos() }} photo{{ totalPhotos() > 1 ? "s" : "" }} •
+                Auto-sequence
+              </p>
+            </div>
+
+            <!-- Capture Button -->
+            <div class="capture-button-wrapper">
+              <button
+                class="capture-button"
+                (click)="startCapture()"
+                [disabled]="isCapturing()"
+              >
+                <svg
+                  width="48"
+                  height="48"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="white"
+                    stroke-width="2"
+                    fill="none"
+                  />
+                  <circle cx="12" cy="12" r="6" />
+                </svg>
+              </button>
+            </div>
+
+            <!-- Controls -->
+            <div class="capture-controls-section">
+              <div class="control-item">
+                <label class="control-label">
+                  <svg
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                  <span>Countdown Time</span>
+                </label>
+                <select
+                  class="countdown-select"
+                  [value]="countdownTime()"
+                  (change)="onCountdownTimeChange($event)"
+                  [disabled]="isCapturing()"
+                >
+                  <option
+                    *ngFor="let option of countdownOptions"
+                    [value]="option"
+                  >
+                    {{
+                      option === 0
+                        ? "No Countdown"
+                        : option + " second" + (option > 1 ? "s" : "")
+                    }}
+                  </option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas View: Show Final Result -->
+      <div
+        class="canvas-view-main"
+        *ngIf="!isCapturing() && capturedPhotos().length > 0"
+      >
+        <!-- Loading Overlay -->
+        <div class="loading-overlay" *ngIf="isProcessing()">
+          <div class="spinner"></div>
+          <p>Processing photos...</p>
+        </div>
+
+        <div class="canvas-container" [class.hidden]="isProcessing()">
+          <app-canvas-editor
+            *ngIf="selectedLayout()"
+            [layout]="selectedLayout()!"
+            [frame]="selectedFrame()"
+            [isPreview]="false"
+            (canvasReady)="onCanvasReady($event)"
+          ></app-canvas-editor>
+        </div>
+
+        <div class="canvas-actions" [class.hidden]="isProcessing()">
+          <button class="btn btn-secondary btn-lg" (click)="retakePhotos()">
+            <svg
+              width="24"
+              height="24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
+            </svg>
+            Retake Photos
+          </button>
+
+          <button
+            class="btn btn-success btn-lg"
+            (click)="downloadImage()"
+            [disabled]="isExporting()"
+          >
+            <svg
+              width="24"
+              height="24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Download
+          </button>
+
+          <button
+            class="btn btn-primary btn-lg btn-print"
+            (click)="exportAndPrint()"
+            [disabled]="isExporting()"
+            title="In ảnh sau khi chụp"
+          >
+            <svg
+              width="24"
+              height="24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <polyline points="6 9 6 2 18 2 18 9" />
+              <path
+                d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"
+              />
+              <rect x="6" y="14" width="12" height="8" />
+            </svg>
+            In ảnh
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Sidebar: Hidden - Layout and Frame are auto-selected -->
+  </main>
+</div>

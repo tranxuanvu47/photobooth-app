@@ -1,0 +1,24 @@
+# Frame Assets
+
+This directory can contain overlay frame images (PNG with transparency).
+
+## Adding Frame Overlays
+
+1. Create transparent PNG files with frame designs
+2. Add them to this directory
+3. Reference in the FRAME_THEMES array with overlayUrl
+
+## Frame Design Guidelines
+
+- Use transparent PNG format
+- Recommended size: Match your layout dimensions (e.g., 1200x1800 for 4x6)
+- Keep transparency in the center where photos show through
+- Design borders, corners, and decorative elements around the edges
+
+## Alternative: CSS-Based Frames
+
+The current implementation uses CSS borders and shadows.
+This is more flexible and performant than image overlays.
+
+Image overlays are best for complex designs that can't be achieved with CSS alone.
+

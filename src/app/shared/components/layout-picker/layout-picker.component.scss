@@ -1,0 +1,101 @@
+.layout-picker {
+  padding: var(--spacing-lg);
+}
+
+.picker-title {
+  margin-bottom: var(--spacing-lg);
+  color: var(--text-primary);
+  font-size: 1.25rem;
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--spacing-lg);
+}
+
+.layout-card {
+  background: var(--surface-color);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  
+  &:hover {
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+  }
+  
+  &.selected {
+    border-color: var(--primary-color);
+    background: rgba(251, 191, 202, 0.05);
+    box-shadow: var(--shadow-md);
+  }
+}
+
+.layout-preview {
+  margin-bottom: var(--spacing-md);
+  aspect-ratio: 4 / 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--background-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.preview-slot {
+  position: absolute;
+  background: var(--primary-color);
+  opacity: 0.3;
+  border: 1px solid var(--primary-dark);
+  border-radius: var(--radius-sm);
+}
+
+.layout-info {
+  text-align: center;
+}
+
+.layout-name {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: var(--spacing-xs);
+  color: var(--text-primary);
+}
+
+.layout-details {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.selected-indicator {
+  position: absolute;
+  top: var(--spacing-sm);
+  right: var(--spacing-sm);
+  width: 32px;
+  height: 32px;
+  background: var(--primary-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  box-shadow: var(--shadow-sm);
+}
+
+@media (max-width: 768px) {
+  .layout-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: var(--spacing-md);
+  }
+}
+

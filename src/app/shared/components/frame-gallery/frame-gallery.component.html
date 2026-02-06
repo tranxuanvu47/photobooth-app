@@ -1,0 +1,89 @@
+<div class="frame-gallery">
+  <div class="gallery-header">
+    <h3 class="gallery-title">Choose Frame</h3>
+    <button class="btn btn-secondary btn-sm" (click)="clearFrame()">
+      No Frame
+    </button>
+  </div>
+
+  <div class="frame-filters">
+    <button 
+      class="filter-btn"
+      [class.active]="filterTheme() === 'all'"
+      (click)="setFilter('all')"
+    >
+      All
+    </button>
+    <button 
+      class="filter-btn"
+      [class.active]="filterTheme() === 'classic'"
+      (click)="setFilter('classic')"
+    >
+      Classic
+    </button>
+    <button 
+      class="filter-btn"
+      [class.active]="filterTheme() === 'floral'"
+      (click)="setFilter('floral')"
+    >
+      Floral
+    </button>
+    <button 
+      class="filter-btn"
+      [class.active]="filterTheme() === 'modern'"
+      (click)="setFilter('modern')"
+    >
+      Modern
+    </button>
+    <button 
+      class="filter-btn"
+      [class.active]="filterTheme() === 'vintage'"
+      (click)="setFilter('vintage')"
+    >
+      Vintage
+    </button>
+  </div>
+
+  <div class="frame-grid">
+    <div 
+      *ngFor="let frame of filteredFrames"
+      class="frame-card"
+      [class.selected]="selectedFrame() === frame.id"
+      (click)="selectFrame(frame)"
+    >
+      <div 
+        class="frame-preview"
+        [style.border-width.px]="frame.config.borderWidth / 3"
+        [style.border-color]="frame.config.borderColor"
+        [style.border-style]="frame.config.borderStyle"
+        [style.border-radius.px]="frame.config.cornerRadius"
+        [style.box-shadow]="
+          frame.config.shadowOffsetX + 'px ' + 
+          frame.config.shadowOffsetY + 'px ' + 
+          frame.config.shadowBlur + 'px ' + 
+          frame.config.shadowColor
+        "
+      >
+        <div class="frame-inner" *ngIf="frame.config.innerBorderWidth">
+          <div 
+            class="inner-border"
+            [style.border-width.px]="frame.config.innerBorderWidth / 3"
+            [style.border-color]="frame.config.innerBorderColor"
+          ></div>
+        </div>
+      </div>
+      
+      <div class="frame-info">
+        <h4 class="frame-name">{{ frame.name }}</h4>
+        <p class="frame-description">{{ frame.description }}</p>
+      </div>
+      
+      <div class="selected-indicator" *ngIf="selectedFrame() === frame.id">
+        <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20">
+          <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</div>
+

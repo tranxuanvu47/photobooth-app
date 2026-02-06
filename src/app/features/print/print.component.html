@@ -1,0 +1,168 @@
+<div class="print-page">
+  <!-- Print Controls (hidden when printing) -->
+  <div class="print-controls no-print">
+    <div class="controls-header">
+      <h1>Print Settings</h1>
+      <button class="btn btn-secondary" (click)="goBack()">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back to Editor
+      </button>
+    </div>
+
+    <div class="controls-grid">
+      <!-- Print Options Card -->
+      <div class="control-card">
+        <h3>Print Options</h3>
+
+        <div class="form-group">
+          <label>Paper Size</label>
+          <select 
+            [value]="printOptions().paperSize"
+            (change)="updatePrintOptions('paperSize', $any($event.target).value)"
+          >
+            <option value="4x6">4x6 inches</option>
+            <option value="2x6">2x6 inches (Photo Strip)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Orientation</label>
+          <select 
+            [value]="printOptions().orientation"
+            (change)="updatePrintOptions('orientation', $any($event.target).value)"
+          >
+            <option value="portrait">Portrait</option>
+            <option value="landscape">Landscape</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Margins</label>
+          <select 
+            [value]="printOptions().margins"
+            (change)="updatePrintOptions('margins', $any($event.target).value)"
+          >
+            <option value="none">None</option>
+            <option value="minimal">Minimal (1/8 inch)</option>
+            <option value="normal">Normal (1/4 inch)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Number of Copies</label>
+          <input 
+            type="number" 
+            min="1" 
+            max="100"
+            [value]="printOptions().copies"
+            (change)="updatePrintOptions('copies', +$any($event.target).value)"
+          >
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label>
+            <input 
+              type="checkbox"
+              [checked]="printOptions().fitToPage"
+              (change)="updatePrintOptions('fitToPage', $any($event.target).checked)"
+            >
+            <span>Fit to page</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Print Methods Card -->
+      <div class="control-card">
+        <h3>Print Method</h3>
+
+        <!-- Browser Print -->
+        <div class="print-method">
+          <h4>Browser Print</h4>
+          <p class="method-description">
+            Use your browser's print dialog. Works on all devices.
+          </p>
+          <button 
+            class="btn btn-primary w-full"
+            (click)="printWithBrowser()"
+            [disabled]="isPrinting()"
+          >
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 6 2 18 2 18 9"/>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+              <rect x="6" y="14" width="12" height="8"/>
+            </svg>
+            {{ isPrinting() ? 'Printing...' : 'Print with Browser' }}
+          </button>
+        </div>
+
+        <!-- Agent Print -->
+        <div class="print-method" *ngIf="agentAvailable()">
+          <h4>Direct Print (Agent)</h4>
+          <p class="method-description">
+            Print directly to a system printer without dialog.
+          </p>
+
+          <div class="form-group" *ngIf="availablePrinters().length > 0">
+            <label>Select Printer</label>
+            <select [(ngModel)]="selectedPrinter">
+              <option value="">Default Printer</option>
+              <option *ngFor="let printer of availablePrinters()" [value]="printer">
+                {{ printer }}
+              </option>
+            </select>
+          </div>
+
+          <button 
+            class="btn btn-success w-full"
+            (click)="printWithAgent()"
+            [disabled]="isPrinting()"
+          >
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+            </svg>
+            {{ isPrinting() ? 'Printing...' : 'Print with Agent' }}
+          </button>
+        </div>
+
+        <!-- Agent Not Available -->
+        <div class="print-method agent-info" *ngIf="!agentAvailable()">
+          <h4>Print Agent Not Running</h4>
+          <p class="method-description">
+            For direct printing without dialogs, start the print agent on your PC.
+          </p>
+          <details class="agent-instructions">
+            <summary>How to start the print agent</summary>
+            <ol>
+              <li>Open a terminal/command prompt</li>
+              <li>Navigate to the project folder</li>
+              <li>Run: <code>npm run print-agent</code></li>
+              <li>The agent will start on port 3000</li>
+            </ol>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview Info -->
+    <div class="preview-info">
+      <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="10" cy="10" r="8"/>
+        <line x1="10" y1="6" x2="10" y2="10"/>
+        <line x1="10" y1="14" x2="10.01" y2="14"/>
+      </svg>
+      <span>The image below shows how your print will look. Actual size may vary based on your printer settings.</span>
+    </div>
+  </div>
+
+  <!-- Print Preview (visible when printing) -->
+  <div class="print-preview" *ngIf="imageUrl()">
+    <img 
+      [src]="imageUrl()" 
+      alt="Print preview"
+      class="print-image"
+    >
+  </div>
+</div>
+
