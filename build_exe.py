@@ -16,7 +16,7 @@ PyInstaller.__main__.run([
     'main.py',
     '--name=PhotoboothStation',
     '--windowed', # Ẩn cửa sổ console đen xì lúc chạy
-    '--onedir', # Gói vào thư mục (tránh bị Windows Smart App Control chặn)
+    '--onefile', # Gói tất cả vào 1 file .exe duy nhất
     '--icon=NONE', # Tạm thời chưa có icon
     '--add-data=config.py;.',
     '--add-data=camera_controller.py;.',
