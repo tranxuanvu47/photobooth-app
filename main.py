@@ -40,6 +40,11 @@ class PhotoboothApp:
         # Timer tự động refresh gallery (1 giây)
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.refresh_thumbnails)
+
+        # Timer tự động theo dõi và copy ảnh từ raw_captures vào session hiện tại (1 giây)
+        self.monitor_timer = QTimer()
+        self.monitor_timer.timeout.connect(self.monitor_raw_dir)
+        self.monitor_timer.start(1000)
         
         self.setup_connections()
         self.refresh_gallery_data() # Load LUTs, Frames, Thumbnails
@@ -456,6 +461,48 @@ class PhotoboothApp:
                 shutil.copy2(f, os.path.join(config.LUTS_DIR, os.path.basename(f)))
             self.refresh_gallery_data()
             self.ui.log(f"Đã nhập {len(files)} mẫu màu mới.")
+
+    def monitor_raw_dir(self):
+        """Theo dõi folder raw_captures, nếu có file ảnh lẻ thì copy vào session hiện tại."""
+        try:
+            # Chỉ lấy các file trong root RAW_DIR, không lấy trong folder con
+            files = [f for f in os.listdir(config.RAW_DIR) 
+                    if os.path.isfile(os.path.join(config.RAW_DIR, f)) 
+                    and f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            
+            if not files:
+                return
+
+            session_dir = os.path.join(config.RAW_DIR, self.current_session)
+            if not os.path.exists(session_dir):
+                os.makedirs(session_dir, exist_ok=True)
+
+            for f in files:
+                old_path = os.path.join(config.RAW_DIR, f)
+                new_name = f
+                # Tránh trùng tên nếu file đã tồn tại trong session
+                count = 1
+                while os.path.exists(os.path.join(session_dir, new_name)):
+                    name, ext = os.path.splitext(f)
+                    new_name = f"{name}_{count}{ext}"
+                    count += 1
+                
+                new_path = os.path.join(session_dir, new_name)
+                
+                try:
+                    # Di chuyển file thay vì copy để tránh lặp lại
+                    shutil.move(old_path, new_path)
+                    self.ui.log(f"📸 Tự động nhận ảnh: {new_name} -> {self.current_session}")
+                except Exception as e:
+                    self.ui.log(f"🛑 Lỗi di chuyển ảnh {f}: {e}")
+                    
+            # Nếu đang ở gallery thì refresh tự động
+            if self.ui.central_widget.currentIndex() == 1:
+                self.refresh_thumbnails()
+                
+        except Exception as e:
+            # Im lặng lỗi định kỳ để ko làm phiền user nếu chỉ là lỗi truy cập file nhất thời
+            pass
 
     # --- SESSION MANAGEMENT ---
     def load_sessions(self, select_name=None):
