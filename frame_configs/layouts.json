@@ -1,0 +1,52 @@
+{
+    "layouts": [
+        {
+            "name": "vu_hao_new",
+            "frame_file": "frames/vu_hao_new.png",
+            "frame_width": 1446,
+            "frame_height": 2170,
+            "points": {
+                "top_left": {
+                    "x_percent": 9.27,
+                    "y_percent": 11.29
+                },
+                "top_right": {
+                    "x_percent": 91.29,
+                    "y_percent": 11.66
+                },
+                "bottom_right": {
+                    "x_percent": 91.29,
+                    "y_percent": 52.4
+                },
+                "bottom_left": {
+                    "x_percent": 9.27,
+                    "y_percent": 52.4
+                }
+            }
+        },
+        {
+            "name": "vows_08_march",
+            "frame_file": "frames/frame-8-march.png",
+            "frame_width": 4630,
+            "frame_height": 6514,
+            "points": {
+                "top_left": {
+                    "x_percent": 12.05,
+                    "y_percent": 8.94
+                },
+                "top_right": {
+                    "x_percent": 88.94,
+                    "y_percent": 8.94
+                },
+                "bottom_right": {
+                    "x_percent": 88.94,
+                    "y_percent": 42.51
+                },
+                "bottom_left": {
+                    "x_percent": 12.05,
+                    "y_percent": 42.51
+                }
+            }
+        }
+    ]
+}
