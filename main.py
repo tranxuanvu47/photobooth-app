@@ -11,6 +11,9 @@ from printer_service import PrinterService
 from frame_layout_manager import FrameLayoutManager
 from frame_config_dialog import FrameConfigDialog
 import config
+import pyautogui
+import pygetwindow as gw
+import time
 
 class PhotoboothApp:
     def __init__(self):
@@ -86,6 +89,7 @@ class PhotoboothApp:
         self.ui.btn_refresh_gallery.clicked.connect(self.refresh_thumbnails)
         self.ui.btn_delete_lut.clicked.connect(self.delete_lut_action)
         self.ui.btn_add_lut.clicked.connect(self.import_lut_action)
+        self.ui.btn_gallery_capture.clicked.connect(self.trigger_capture_one)
 
     # --- NAVIGATION ---
     def show_station(self):
@@ -461,6 +465,56 @@ class PhotoboothApp:
                 shutil.copy2(f, os.path.join(config.LUTS_DIR, os.path.basename(f)))
             self.refresh_gallery_data()
             self.ui.log(f"Đã nhập {len(files)} mẫu màu mới.")
+
+    def find_capture_one(self):
+        """Tìm cửa sổ Capture One dựa trên tiêu đề."""
+        keywords = ["Capture One", "Photobooth_DamCuoi"]
+        for title in keywords:
+            wins = gw.getWindowsWithTitle(title)
+            if wins:
+                # Trả về cửa sổ đầu tiên tìm thấy
+                return wins[0]
+        return None
+
+    def trigger_capture_one(self):
+        """Kích hoạt Capture One và gửi phím tắt chụp ảnh (Ctrl+K), sau đó quay lại app."""
+        # Lưu lại cửa sổ hiện tại (Photobooth) để quay lại sau
+        photobooth_win = None
+        wins = gw.getWindowsWithTitle("Photobooth Station Pro")
+        if wins: photobooth_win = wins[0]
+
+        target = self.find_capture_one()
+        if target:
+            try:
+                # 1. Kích hoạt cửa sổ Capture One
+                if target.isMinimized:
+                    target.restore()
+                target.activate()
+                time.sleep(0.3) # Đợi cửa sổ focus (giảm từ 0.5 xuống 0.3 cho nhanh)
+                
+                # 2. Gửi lệnh chụp
+                pyautogui.hotkey('ctrl', 'k')
+                self.ui.log("📸 Capture One: ĐÃ BẤM CHỤP (Ctrl+K)")
+                
+                # 3. Tự động quay lại ứng dụng Photobooth
+                if photobooth_win:
+                    # Đợi 1 chút để Capture One nhận lệnh xong rồi quay lại
+                    time.sleep(0.2)
+                    photobooth_win.activate()
+
+                # Feedback trên button (tạm thời)
+                original_text = self.ui.btn_gallery_capture.text()
+                self.ui.btn_gallery_capture.setText("✅ ĐÃ CHỤP!")
+                QTimer.singleShot(1500, lambda: self.ui.btn_gallery_capture.setText(original_text))
+                
+            except Exception as e:
+                self.ui.log(f"🛑 Lỗi điều khiển Capture One: {e}")
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.critical(self.ui, "Lỗi", f"Không thể điều khiển cửa sổ: {e}")
+        else:
+            self.ui.log("🛑 Không tìm thấy Capture One!")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self.ui, "Lỗi", "Không tìm thấy Capture One! Hãy chắc chắn phần mềm đang mở.")
 
     def monitor_raw_dir(self):
         """Theo dõi folder raw_captures, nếu có file ảnh lẻ thì copy vào session hiện tại."""

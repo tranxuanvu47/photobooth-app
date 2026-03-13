@@ -2,3 +2,5 @@ PyQt5
 Pillow
 opencv-python
 pillow-lut
+pyautogui
+pygetwindow

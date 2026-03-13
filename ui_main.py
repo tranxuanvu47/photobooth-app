@@ -474,6 +474,11 @@ class PhotoboothUI(QMainWindow):
         
         sidebar_vbox.addLayout(gallery_header_grid)
         
+        self.btn_gallery_capture = QPushButton("📸 CHỤP ẢNH (C1)")
+        self.btn_gallery_capture.setStyleSheet(STYLE_PRIMARY_BTN + "font-size: 20px; height: 60px; margin-top: 5px;")
+        self.btn_gallery_capture.setCursor(Qt.PointingHandCursor)
+        sidebar_vbox.addWidget(self.btn_gallery_capture)
+        
         self.thumbnail_list = QListWidget()
         self.thumbnail_list.setStyleSheet(STYLE_THUMBNAIL_LIST)
         self.thumbnail_list.setViewMode(QListWidget.IconMode)
