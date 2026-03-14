@@ -29,6 +29,7 @@ ENV/
 captures/
 raw_captures/
 output/
+send linh gay/
 *.log
 *.orig
 *.cube
