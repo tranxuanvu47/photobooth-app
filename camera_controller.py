@@ -58,6 +58,9 @@ class CameraWorker(QThread):
     def resume_preview(self):
         self.is_paused = False
 
+    def pause_preview(self):
+        self.is_paused = True
+
     def stop(self):
         self.running = False # Renamed from is_running
         self.action = "stop"

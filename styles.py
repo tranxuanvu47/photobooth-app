@@ -130,10 +130,20 @@ STYLE_THUMBNAIL_LIST = f"""
         border: none;
         outline: 0;
     }}
-    QListWidget::item:selected {{
-        border: 2px solid {COLOR_PEACH};
-        border-radius: 8px;
+    QListWidget::item {{
         background: transparent;
+        border: none;
+        padding: 0px;
+        margin: 0px;
+        outline: none;
+    }}
+    QListWidget::item:selected {{
+        background-color: #FFF0EB;
+        border: 2px solid #FFAB91;
+        border-radius: 8px;
+    }}
+    QListWidget::item:hover {{
+        background-color: rgba(0,0,0,0.03);
     }}
 """
 

@@ -329,67 +329,74 @@ class ImageProcessor:
             print(f"[CROP Lỗi] Không thể cắt ảnh về tỉ lệ 4:3: {e}")
 
     @staticmethod
-    def apply_frame(image_path, layout_config, icons_data=None):
+    def apply_frame(image_paths, layout_config, icons_data=None):
+        """
+        image_paths: List các đường dẫn ảnh (có thể có None nếu slot trống)
+        layout_config: Config object chứa list 'slots'
+        """
         try:
-            if not os.path.exists(image_path):
-                raise FileNotFoundError("Không tìm thấy ảnh gốc để chèn khung.")
-                
+            # 1. Load frame overlay (Background)
             frame_path = layout_config.get("frame_file", "")
             if not os.path.exists(frame_path):
                 raise FileNotFoundError(f"Không tìm thấy file khung: {frame_path}")
                 
             frame_w = layout_config["frame_width"]
             frame_h = layout_config["frame_height"]
-            points = layout_config["points"]
             
-            # Tính toán Bounding Box từ tọa độ %
-            min_x = min(points["top_left"]["x_percent"], points["bottom_left"]["x_percent"]) / 100.0 * frame_w
-            max_x = max(points["top_right"]["x_percent"], points["bottom_right"]["x_percent"]) / 100.0 * frame_w
-            min_y = min(points["top_left"]["y_percent"], points["top_right"]["y_percent"]) / 100.0 * frame_h
-            max_y = max(points["bottom_left"]["y_percent"], points["bottom_right"]["y_percent"]) / 100.0 * frame_h
-            
-            box_x = int(min_x)
-            box_y = int(min_y)
-            box_w = int(max_x - min_x)
-            box_h = int(max_y - min_y)
-            
-            # Xử lý ảnh base (ảnh chụp được)
-            base_img = Image.open(image_path).convert("RGBA")
-            
-            # Resize image to fit box (Cover / Crop to fill)
-            img_aspect = base_img.width / base_img.height
-            box_aspect = box_w / box_h
-            
-            if img_aspect > box_aspect:
-                # Ảnh rộng hơn tỷ lệ => crop width
-                new_h = box_h
-                new_w = int(new_h * img_aspect)
-            else:
-                # Ảnh cao hơn tỷ lệ => crop height
-                new_w = box_w
-                new_h = int(new_w / img_aspect)
-                
-            resized_img = base_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-            
-            # Cắt phần thừa ra ở giữa tâm
-            left = (new_w - box_w) / 2
-            top = (new_h - box_h) / 2
-            right = (new_w + box_w) / 2
-            bottom = (new_h + box_h) / 2
-            cropped_img = resized_img.crop((left, top, right, bottom))
-            
-            # Đọc overlay frame (Đóng vai trò làm nền bên dưới)
             frame_img = Image.open(frame_path).convert("RGBA")
             if frame_img.size != (frame_w, frame_h):
                 frame_img = frame_img.resize((frame_w, frame_h), Image.Resampling.LANCZOS)
                 
-            # Lấy chính cái khung tĩnh làm Gốc (Background)
             result = frame_img.copy()
             
-            # Dán chồng ảnh chụp (đã crop xong) LÊN TRÊN cái nền ở đúng tọa độ box
-            result.paste(cropped_img, (box_x, box_y))
+            # 2. Xử lý từng slot
+            slots = layout_config.get("slots", [])
+            for i, slot in enumerate(slots):
+                if i >= len(image_paths) or not image_paths[i]:
+                    continue # Bỏ qua nếu không có ảnh cho slot này
+                
+                path = image_paths[i]
+                if not os.path.exists(path):
+                    continue
+
+                points = slot["points"]
+                # Tính toán Bounding Box từ tọa độ %
+                min_x = min(points["top_left"]["x_percent"], points["bottom_left"]["x_percent"]) / 100.0 * frame_w
+                max_x = max(points["top_right"]["x_percent"], points["bottom_right"]["x_percent"]) / 100.0 * frame_w
+                min_y = min(points["top_left"]["y_percent"], points["top_right"]["y_percent"]) / 100.0 * frame_h
+                max_y = max(points["bottom_left"]["y_percent"], points["bottom_right"]["y_percent"]) / 100.0 * frame_h
+                
+                box_x = int(min_x)
+                box_y = int(min_y)
+                box_w = int(max_x - min_x)
+                box_h = int(max_y - min_y)
+                
+                if box_w <= 0 or box_h <= 0: continue
+
+                # Load và resize ảnh chụp
+                with Image.open(path).convert("RGBA") as base_img:
+                    img_aspect = base_img.width / base_img.height
+                    box_aspect = box_w / box_h
+                    
+                    if img_aspect > box_aspect:
+                        new_h = box_h
+                        new_w = int(new_h * img_aspect)
+                    else:
+                        new_w = box_w
+                        new_h = int(new_w / img_aspect)
+                        
+                    resized_img = base_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    
+                    left = (new_w - box_w) / 2
+                    top = (new_h - box_h) / 2
+                    right = (new_w + box_w) / 2
+                    bottom = (new_h + box_h) / 2
+                    cropped_img = resized_img.crop((left, top, right, bottom))
+                    
+                    # Dán chồng ảnh chụp vào background
+                    result.paste(cropped_img, (box_x, box_y))
             
-            # 🎨 CHÈN ICONS TRANG TRÍ
+            # 🎨 CHÈN ICONS TRANG TRÍ (giữ nguyên logic cũ)
             if icons_data:
                 for icon in icons_data:
                     try:
@@ -423,7 +430,10 @@ class ImageProcessor:
 
             # Đổi về RGB để save jpg
             rgb_im = result.convert('RGB')
-            filename = "print_ready_" + os.path.basename(image_path)
+            
+            # Tạo tên file output dựa trên ảnh đầu tiên
+            first_path = next((p for p in image_paths if p), "composite.jpg")
+            filename = "print_ready_" + os.path.basename(first_path)
             out_path = os.path.join(OUTPUT_DIR, filename)
             rgb_im.save(out_path, format="JPEG", quality=98)
             return out_path

@@ -1,15 +1,210 @@
 import os
 import math
 import time
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                             QPushButton, QLabel, QTextEdit, QFrame, QComboBox, 
-                             QSizePolicy, QGridLayout, QTabWidget, QTabBar,
-                             QSlider, QCheckBox, QGraphicsDropShadowEffect,
-                             QStackedWidget, QLineEdit, QListWidget, QListWidgetItem,
-                             QListView, QDialog)
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QRect, QSize, QPoint
-from PyQt5.QtGui import QPixmap, QFont, QImage, QPainter, QPen, QColor, QIcon, QTransform
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+                             QPushButton, QFrame, QGridLayout, QScrollArea, QListWidget, 
+                             QListWidgetItem, QAbstractItemView, QGraphicsDropShadowEffect, 
+                             QProgressBar, QStyledItemDelegate, QStyle, QTextEdit, QComboBox, 
+                             QSizePolicy, QTabWidget, QTabBar, QSlider, QCheckBox, 
+                             QStackedWidget, QLineEdit, QListView, QDialog, QApplication)
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint, QRect, QPropertyAnimation, QEasingCurve, QTimer
+from PyQt5.QtGui import QPixmap, QFont, QImage, QPainter, QPen, QColor, QIcon, QTransform, QMovie
 from styles import *
+
+class NoSelectionDelegate(QStyledItemDelegate):
+    """Delegate để triệt tiêu hoàn toàn khung chọn (focus rect) và highlight mặc định của QListWidget."""
+    def paint(self, painter, option, index):
+        # Đảm bảo state không chứa Selected hoặc HasFocus trước khi gọi super
+        option.state &= ~QStyle.State_Selected
+        option.state &= ~QStyle.State_HasFocus
+        super().paint(painter, option, index)
+
+class LoadingOverlay(QWidget):
+    """Overlay hiển thị hiệu ứng loading mờ đè lên giao diện."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, False) # Chặn click vào bên dưới
+        self.setObjectName("loadingOverlay")
+        self.layout = QVBoxLayout(self)
+        self.layout.setAlignment(Qt.AlignCenter)
+        
+        container = QFrame()
+        container.setStyleSheet(f"""
+            QFrame {{
+                background-color: rgba(0, 0, 0, 70%);
+                border-radius: 20px;
+                padding: 40px;
+            }}
+        """)
+        c_layout = QVBoxLayout(container)
+        
+        self.spinner = QLabel("✨")
+        self.spinner.setAlignment(Qt.AlignCenter)
+        self.spinner.setStyleSheet("font-size: 60px; color: white;")
+        
+        self.label = QLabel("Đang xử lý...")
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet("color: white; font-size: 24px; font-weight: bold; margin-top: 20px;")
+        
+        c_layout.addWidget(self.spinner)
+        c_layout.addWidget(self.label)
+        self.layout.addWidget(container)
+        
+        self.setStyleSheet("#loadingOverlay { background-color: rgba(255, 255, 255, 30%); }")
+        self.hide()
+
+    def set_message(self, text):
+        self.label.setText(text)
+
+    def resizeToParent(self):
+        if self.parent():
+            self.resize(self.parent().size())
+            self.raise_()
+class CaptureReviewDialog(QDialog):
+    """Hộp thoại xem lại ảnh ngay sau khi chụp."""
+    def __init__(self, parent=None, pixmap=None, current_idx=1, total=1):
+        super().__init__(parent)
+        self.setWindowTitle("Xem lại ảnh vừa chụp")
+        
+        from PyQt5.QtWidgets import QDesktopWidget
+        screen = QDesktopWidget().availableGeometry()
+        # Phình to dialog ra (tầm 80% chiều cao và 60% chiều rộng màn hình)
+        # để đảm bảo phần preview ảnh chiếm được ít nhất 50% diện tích nhìn thấy
+        self.setFixedSize(int(screen.width() * 0.6), int(screen.height() * 0.8))
+        self.setModal(True)
+        # Bỏ khung viền mặc định để làm modern UI nếu muốn, nhưng ở đây tạm để standard modal
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
+        
+        title_lbl = QLabel(f"ẢNH THỨ {current_idx} / {total}")
+        title_lbl.setStyleSheet("font-size: 20px; font-weight: bold; color: #333;")
+        title_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_lbl)
+        
+        self.img_label = QLabel()
+        self.img_label.setAlignment(Qt.AlignCenter)
+        if pixmap:
+            # Scale ảnh to ra cho vừa khung mới (trừ đi khoảng lề và nút bấm)
+            pw, ph = self.width() - 80, self.height() - 170
+            scaled_pix = pixmap.scaled(pw, ph, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.img_label.setPixmap(scaled_pix)
+        else:
+            self.img_label.setText("Không thể tải ảnh")
+        
+        # Border cho ảnh
+        self.img_label.setStyleSheet("border: 2px solid #ddd; border-radius: 8px; background: #f9f9f9;")
+        layout.addWidget(self.img_label)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(20)
+        
+        self.btn_retake = QPushButton("📸 Chụp lại tấm này")
+        self.btn_retake.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336; color: white; padding: 15px; 
+                font-size: 18px; font-weight: bold; border-radius: 10px;
+            }
+            QPushButton:hover { background-color: #d32f2f; }
+        """)
+        self.btn_retake.setCursor(Qt.PointingHandCursor)
+        self.btn_retake.clicked.connect(lambda: self.done(QDialog.Rejected))
+        
+        self.btn_next = QPushButton("✅ Tiếp tục" if current_idx < total else "🎯 Hoàn thành")
+        self.btn_next.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50; color: white; padding: 15px; 
+                font-size: 18px; font-weight: bold; border-radius: 10px;
+            }
+            QPushButton:hover { background-color: #45a049; }
+        """)
+        self.btn_next.setCursor(Qt.PointingHandCursor)
+        self.btn_next.clicked.connect(self.accept)
+        
+        btn_layout.addWidget(self.btn_retake, stretch=1)
+        btn_layout.addWidget(self.btn_next, stretch=1)
+        layout.addLayout(btn_layout)
+
+class ThumbnailWidget(QWidget):
+    """Widget cho mỗi item trong hàng đợi ảnh RAW, có nút X để xóa khỏi khung."""
+    remove_signal = pyqtSignal(str) # Phát ra path khi bấm X
+    click_signal = pyqtSignal(str)  # Phát ra path khi bấm vào ảnh
+    
+    def __init__(self, path, parent=None):
+        super().__init__(parent)
+        self.path = path
+        self.setObjectName("thumbWidget")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setAttribute(Qt.WA_StyledBackground, True) # Cho phép QWidget vẽ bộ máy Style
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(20, 20, 20, 20) # Tăng lề để nút X có chỗ đứng, không bị clipping
+        
+        self.img_label = QLabel()
+        self.img_label.setAlignment(Qt.AlignCenter)
+        self.img_label.setFixedSize(170, 170)
+        self.img_label.setStyleSheet("""
+            background-color: #f0f0f0; 
+            border-radius: 4px;
+            border: none;
+        """)
+        pix = QPixmap(path).scaled(170, 170, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.img_label.setPixmap(pix)
+        self.layout.addWidget(self.img_label)
+        
+        # Nút X xóa khỏi khung (Đưa ra tuyệt đối ở ngoài)
+        self.btn_remove = QPushButton("✕", self)
+        self.btn_remove.setFixedSize(30, 30)
+        self.btn_remove.setCursor(Qt.PointingHandCursor)
+        self.btn_remove.setStyleSheet("""
+            QPushButton {
+                background-color: #ff5252;
+                color: white;
+                font-weight: bold;
+                font-size: 16px;
+                border-radius: 15px;
+                border: 2px solid white;
+            }
+            QPushButton:hover { background-color: #ff1744; }
+        """)
+        self.btn_remove.move(175, 5) # Vị trí mới để không bị ẩn 1 phần
+        self.btn_remove.raise_() # Đảm bảo luôn nằm trên cùng
+        self.btn_remove.hide()
+        self.btn_remove.clicked.connect(lambda: self.remove_signal.emit(self.path))
+        
+        # Style mặc định: Không viền
+        self.setStyleSheet("""
+            #thumbWidget {
+                border-radius: 8px;
+                background: transparent;
+                border: none;
+            }
+        """)
+
+    def set_in_frame(self, in_frame):
+        if in_frame:
+            self.btn_remove.show()
+            self.btn_remove.raise_() # Nổi lên trên khung viền
+            self.setStyleSheet("""
+                #thumbWidget {
+                    border: 4px solid #FFAB91;
+                    border-radius: 8px;
+                    background: rgba(255, 171, 145, 10%);
+                }
+            """)
+        else:
+            self.btn_remove.hide()
+            self.setStyleSheet("""
+                #thumbWidget {
+                    background: transparent;
+                    border: none;
+                    border-radius: 8px;
+                }
+            """)
+
+    def mousePressEvent(self, event):
+        self.click_signal.emit(self.path)
+        super().mousePressEvent(event)
 
 class ImagePreviewLabel(QLabel):
     """Custom Label để hiển thị ảnh preview giữ đúng tỉ lệ khi resize cửa sổ"""
@@ -35,12 +230,18 @@ class ImagePreviewLabel(QLabel):
         self._setup_overlay_ui()
 
     def _setup_overlay_ui(self):
-        overlay_layout = QVBoxLayout(self)
-        overlay_layout.setContentsMargins(10, 10, 10, 5)
-        overlay_layout.addStretch()
+        self.overlay_layout = QVBoxLayout(self)
+        self.overlay_layout.setContentsMargins(10, 10, 10, 10)
         
-        bottom_row = QHBoxLayout()
-        bottom_row.addStretch()
+        self.top_layout = QVBoxLayout()
+        self.top_layout.setAlignment(Qt.AlignTop | Qt.AlignRight)
+        self.overlay_layout.addLayout(self.top_layout)
+        
+        self.overlay_layout.addStretch()
+        
+        self.bottom_layout = QHBoxLayout()
+        self.bottom_layout.setAlignment(Qt.AlignBottom | Qt.AlignRight)
+        self.overlay_layout.addLayout(self.bottom_layout)
         
         self.btn_zoom_in = QPushButton("+")
         self.btn_zoom_in.setFixedSize(45, 45)
@@ -67,9 +268,8 @@ class ImagePreviewLabel(QLabel):
         self.btn_zoom_in.setStyleSheet(zoom_style)
         self.btn_zoom_out.setStyleSheet(zoom_style)
         
-        bottom_row.addWidget(self.btn_zoom_out)
-        bottom_row.addWidget(self.btn_zoom_in)
-        overlay_layout.addLayout(bottom_row)
+        self.bottom_layout.addWidget(self.btn_zoom_out)
+        self.bottom_layout.addWidget(self.btn_zoom_in)
         
         if not self.interactive:
             self.btn_zoom_in.hide()
@@ -432,8 +632,14 @@ class PhotoboothUI(QMainWindow):
         
         # Screen size and position
         from PyQt5.QtWidgets import QDesktopWidget
-        screen = QDesktopWidget().screenGeometry()
+        screen = QDesktopWidget().availableGeometry() # availableGeometry trừ thanh taskbar
         self.resize(int(screen.width() * 0.9), int(screen.height() * 0.9))
+        
+        # Căn giữa cửa sổ chính
+        qr = self.frameGeometry()
+        cp = screen.center()
+        qr.moveCenter(cp)
+        self.move(qr.topLeft())
         
         self.central_widget = QStackedWidget()
         self.setCentralWidget(self.central_widget)
@@ -448,6 +654,21 @@ class PhotoboothUI(QMainWindow):
         self._setup_station_ui()
         self._setup_gallery_ui()
         
+        # Loading Overlay
+        self.loading_overlay = LoadingOverlay(self)
+        self.loading_overlay.hide()
+
+    def show_loading(self, message="Đang xử lý..."):
+        self.loading_overlay.resizeToParent()
+        self.loading_overlay.set_message(message)
+        self.loading_overlay.show()
+        # Ép vẽ ngay lập tức lên màn hình
+        self.loading_overlay.repaint()
+        QApplication.processEvents()
+        QApplication.processEvents()
+
+    def hide_loading(self):
+        self.loading_overlay.hide()        
     def _setup_station_ui(self):
         layout = QVBoxLayout(self.station_screen)
         layout.setContentsMargins(40, 20, 40, 40)
@@ -463,6 +684,7 @@ class PhotoboothUI(QMainWindow):
         self.btn_admin_setup = QPushButton("⚙️ Admin Setup")
         self.btn_admin_setup.setStyleSheet(STYLE_ADMIN_GHOST_BTN)
         self.btn_admin_setup.setCursor(Qt.PointingHandCursor)
+        self.btn_admin_setup.setCursor(Qt.PointingHandCursor)
         header.addWidget(self.btn_admin_setup)
         layout.addLayout(header)
         
@@ -477,10 +699,24 @@ class PhotoboothUI(QMainWindow):
         preview_vbox.setContentsMargins(0, 0, 0, 0)
         
         preview_grid = QGridLayout()
-        preview_vbox.addLayout(preview_grid)
+        self.preview_label = ImagePreviewLabel("Máy ảnh đang khởi động...🎥")
+        self.preview_label.setStyleSheet("background-color: #000; border-radius: 12px;")
         
-        self.preview_label = ImagePreviewLabel("Khung hình sẵn sàng 📸")
-        preview_grid.addWidget(self.preview_label, 0, 0)
+        # Capture progress overlay (Top Left)
+        self.capture_progress_label = QLabel(self.preview_label)
+        self.capture_progress_label.setText("1 / 1")
+        self.capture_progress_label.setStyleSheet("""
+            background-color: rgba(0, 0, 0, 150);
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+            padding: 10px 20px;
+            border-bottom-right-radius: 10px;
+        """)
+        self.capture_progress_label.move(0, 0)
+        self.capture_progress_label.hide()
+        
+        preview_vbox.addWidget(self.preview_label, stretch=1)
         
         self.countdown_label = QLabel("")
         self.countdown_label.setAlignment(Qt.AlignCenter)
@@ -514,6 +750,7 @@ class PhotoboothUI(QMainWindow):
         row_s = QHBoxLayout()
         self.session_selector = QComboBox()
         self.session_selector.setFixedHeight(50) # To hơn
+        self.session_selector.setCursor(Qt.PointingHandCursor)
         row_s.addWidget(self.session_selector, stretch=1)
         
         self.btn_session_add = QPushButton("➕")
@@ -541,6 +778,9 @@ class PhotoboothUI(QMainWindow):
         self.btn_copy_session_path.setFixedHeight(45) # Tăng height
         row_s_tools.addWidget(self.btn_copy_session_path)
         
+        self.btn_session_rename.setCursor(Qt.PointingHandCursor)
+        self.btn_session_delete.setCursor(Qt.PointingHandCursor)
+        self.btn_copy_session_path.setCursor(Qt.PointingHandCursor)
         vbox_s.addLayout(row_s_tools)
         sidebar.addWidget(block_session)
         
@@ -560,11 +800,8 @@ class PhotoboothUI(QMainWindow):
         self.camera_selector.addItem("Đang quét máy ảnh...")
         cam_row.addWidget(self.camera_selector, stretch=1)
         
-        self.btn_connect = QPushButton("Kết nối")
-        self.btn_connect.setStyleSheet(STYLE_SECONDARY_BTN)
-        self.btn_connect.setFixedSize(100, 50) # To hơn
-        cam_row.addWidget(self.btn_connect)
         vbox_c.addLayout(cam_row)
+        self.camera_selector.setCursor(Qt.PointingHandCursor)
         sidebar.addWidget(block_cam)
         
         # Block 3: Primary Action
@@ -581,16 +818,47 @@ class PhotoboothUI(QMainWindow):
         
         vbox_cap.addSpacing(10)
         
+        # Container cho "Thời gian chờ" để có thể ẩn/hiện theo Mode
+        self.timer_container = QWidget()
+        timer_layout = QVBoxLayout(self.timer_container)
+        timer_layout.setContentsMargins(0, 0, 0, 0)
+        timer_layout.setSpacing(10)
+        
         lbl_countdown = QLabel("THỜI GIAN CHỜ CHỤP")
         lbl_countdown.setStyleSheet("font-size: 14px; font-weight: bold; color: #555;")
-        vbox_cap.addWidget(lbl_countdown)
+        timer_layout.addWidget(lbl_countdown)
         
         self.countdown_selector = QComboBox()
         self.countdown_selector.addItems(["📸 Chụp ngay", "⏳ 1s", "⏳ 3s", "⏳ 5s", "⏳ 10s"])
-        self.countdown_selector.setCurrentIndex(0) # Đưa chụp ngay làm default
+        self.countdown_selector.setCurrentIndex(0)
         self.countdown_selector.setFixedHeight(50)
         self.countdown_selector.setStyleSheet("font-size: 20px;")
-        vbox_cap.addWidget(self.countdown_selector)
+        self.countdown_selector.setCursor(Qt.PointingHandCursor)
+        timer_layout.addWidget(self.countdown_selector)
+        
+        vbox_cap.addWidget(self.timer_container)
+
+        vbox_cap.addSpacing(10)
+        
+        # Container cho "Số lượng hình chụp" để có thể ẩn/hiện theo Mode
+        self.num_captures_container = QWidget()
+        num_caps_layout = QVBoxLayout(self.num_captures_container)
+        num_caps_layout.setContentsMargins(0, 0, 0, 0)
+        num_caps_layout.setSpacing(10)
+        
+        lbl_num_caps = QLabel("SỐ LƯỢNG HÌNH CHỤP")
+        lbl_num_caps.setStyleSheet("font-size: 14px; font-weight: bold; color: #555;")
+        num_caps_layout.addWidget(lbl_num_caps)
+        
+        self.num_captures_selector = QComboBox()
+        self.num_captures_selector.addItems(["1 hình", "2 hình", "4 hình", "6 hình", "8 hình"])
+        self.num_captures_selector.setCurrentIndex(0)
+        self.num_captures_selector.setFixedHeight(50)
+        self.num_captures_selector.setStyleSheet("font-size: 20px;")
+        self.num_captures_selector.setCursor(Qt.PointingHandCursor)
+        num_caps_layout.addWidget(self.num_captures_selector)
+        
+        vbox_cap.addWidget(self.num_captures_container)
         
         sidebar.addWidget(block_capture)
         
@@ -650,13 +918,18 @@ class PhotoboothUI(QMainWindow):
         gp_layout.addWidget(self.gallery_preview_label)
         preview_vbox.addWidget(self.gallery_preview_container, stretch=1)
         
+        # Slot delete buttons are now handled by overlay in ImagePreviewLabel
+        self.slot_delete_layout = self.gallery_preview_label.top_layout
+        
         # New: Horizontal Frame Selector
         self.frame_list = QListWidget()
         self.frame_list.setViewMode(QListView.IconMode)
         self.frame_list.setFlow(QListView.LeftToRight)
         self.frame_list.setMovement(QListView.Static)
+        self.btn_back_to_station.setCursor(Qt.PointingHandCursor)
+        self.frame_list.setCursor(Qt.PointingHandCursor)
         self.frame_list.setSpacing(10)
-        self.frame_list.setFixedHeight(180) # Cao gấp rưỡi (120 * 1.5)
+        self.frame_list.setFixedHeight(220) # Tăng thêm để không bị scroll
         self.frame_list.setIconSize(QSize(210, 140)) # Tỉ lệ 3:2 to hơn
         self.frame_list.setStyleSheet(STYLE_FRAME_SELECTOR)
         self.frame_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -732,6 +1005,16 @@ class PhotoboothUI(QMainWindow):
         
         toolbar.addSpacing(20)
         
+        self.lut_selector.setCursor(Qt.PointingHandCursor)
+        self.sharpen_selector.setCursor(Qt.PointingHandCursor)
+        self.btn_apply_lut.setCursor(Qt.PointingHandCursor)
+        self.btn_apply_sharpen.setCursor(Qt.PointingHandCursor)
+        self.btn_add_lut.setCursor(Qt.PointingHandCursor)
+        self.btn_delete_lut.setCursor(Qt.PointingHandCursor)
+        self.btn_print.setCursor(Qt.PointingHandCursor)
+        self.btn_save.setCursor(Qt.PointingHandCursor)
+        self.btn_add_icon.setCursor(Qt.PointingHandCursor)
+        
         preview_vbox.addWidget(toolbar_container)
         main_area.addLayout(preview_vbox, stretch=5) # Sử dụng số nguyên (5:2 thay vì 3:1.2)
         
@@ -768,17 +1051,190 @@ class PhotoboothUI(QMainWindow):
         sidebar_vbox.addWidget(self.btn_gallery_capture)
         
         self.thumbnail_list = QListWidget()
+        # Cho phép chọn nhiều ảnh
+        self.thumbnail_list.setSelectionMode(QListWidget.ExtendedSelection)
+        self.thumbnail_list.setFocusPolicy(Qt.ClickFocus)
         self.thumbnail_list.setStyleSheet(STYLE_THUMBNAIL_LIST)
         self.thumbnail_list.setViewMode(QListWidget.IconMode)
-        self.thumbnail_list.setIconSize(QSize(180, 180)) # To hơn để tận dụng chiều rộng (cũ 120)
+        self.thumbnail_list.setIconSize(QSize(180, 180)) 
         self.thumbnail_list.setSpacing(12)
         self.thumbnail_list.setResizeMode(QListWidget.Adjust)
-        self.thumbnail_list.setSelectionMode(QListWidget.ExtendedSelection)
         sidebar_vbox.addWidget(self.thumbnail_list)
         
+        self.btn_import_raw.setCursor(Qt.PointingHandCursor)
+        self.btn_refresh_gallery.setCursor(Qt.PointingHandCursor)
+        self.btn_delete_selected.setCursor(Qt.PointingHandCursor)
+        self.btn_delete_all.setCursor(Qt.PointingHandCursor)
+        self.thumbnail_list.setCursor(Qt.PointingHandCursor)
+        
         main_area.addLayout(sidebar_vbox, stretch=1)
+
+    def update_preview_image(self, image_path):
+        if image_path:
+            self.gallery_preview_label.set_image(image_path)
+            self.btn_add_icon.setEnabled(True)
+        else:
+            self.gallery_preview_label.clear_image()
+            self.btn_add_icon.setEnabled(False)
+
+    def update_slot_delete_buttons(self, selected_slot_images, callback):
+        # Clear previous buttons
+        for i in reversed(range(self.slot_delete_layout.count())):
+            item = self.slot_delete_layout.itemAt(i)
+            if item.widget():
+                item.widget().deleteLater()
+            elif item.layout():
+                # Xử lý nếu có layout con (mặc dù hiện tại không có, nhưng để cho chắc)
+                pass
+        
+        # Add new buttons for each filled slot
+        for i, path in enumerate(selected_slot_images):
+            if path:
+                btn = QPushButton(f"Slot {i+1} ✕")
+                btn.setCursor(Qt.PointingHandCursor)
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: rgba(229, 115, 115, 85%);
+                        color: white;
+                        font-weight: bold;
+                        font-size: 14px;
+                        border-radius: 4px;
+                        padding: 5px 10px;
+                        border: 1px solid rgba(255, 255, 255, 30%);
+                    }
+                    QPushButton:hover { background-color: rgba(244, 67, 54, 100%); }
+                """)
+                # Sử dụng default value cho lambda để tránh lỗi closure
+                btn.clicked.connect(lambda checked, idx=i: callback(idx))
+                self.slot_delete_layout.addWidget(btn)
+
+    def set_app_mode(self, mode):
+        """Thiết lập chế độ ứng dụng: 'wedding' hoặc 'normal'"""
+        if mode == "wedding":
+            self.num_captures_container.hide()
+            self.timer_container.hide()
+            self.btn_add_icon.hide() # Ẩn theo yêu cầu mới
+            self.logo_label.setText("👰🤵 WEDDING PHOTOBOOTH")
+        else:
+            self.num_captures_container.show()
+            self.timer_container.show()
+            self.btn_add_icon.show() 
+            self.logo_label.setText("🍑 PHOTOBOOTH STATION")
 
     def log(self, message):
         # Chỉ print ra console thay vì hiện lên UI
         timestamp = time.strftime("%H:%M:%S")
         print(f"[{timestamp}] » {message}")
+
+class VirtualKeyboardDialog(QDialog):
+    """Bàn phím ảo thuận tiện cho màn hình cảm ứng khi nhập tên khách."""
+    def __init__(self, parent=None, title="Nhập Tên Khách", initial_text=""):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setFixedSize(900, 500)
+        self.is_shift = False
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Input field
+        self.input_field = QLineEdit(initial_text)
+        self.input_field.setPlaceholderText("Tên khách hàng...")
+        self.input_field.setMinimumHeight(60)
+        self.input_field.setStyleSheet("""
+            QLineEdit {
+                font-size: 24px;
+                padding: 10px;
+                border: 2px solid #FFAB91;
+                border_radius: 10px;
+                background-color: white;
+            }
+        """)
+        layout.addWidget(self.input_field)
+        
+        # Keyboard grid
+        self.kb_layout = QVBoxLayout()
+        self.kb_layout.setSpacing(5)
+        
+        # Rows definition
+        self.rows = [
+            ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "BKSP"],
+            ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+            ["A", "S", "D", "F", "G", "H", "J", "K", "L", "_"],
+            ["SHIFT", "Z", "X", "C", "V", "B", "N", "M", ".", "-"],
+            ["SPACE", "OK", "Bỏ qua"]
+        ]
+        
+        self.buttons = []
+        for row_data in self.rows:
+            row_layout = QHBoxLayout()
+            row_layout.setSpacing(5)
+            for key in row_data:
+                btn = QPushButton(key)
+                btn.setMinimumHeight(65)
+                
+                # Style cho từng loại nút
+                if key in ["BKSP", "SHIFT", "OK", "Bỏ qua"]:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #757575; color: white; font-weight: bold; font-size: 18px; border-radius: 8px; border: none;
+                        }
+                        QPushButton:hover { background-color: #616161; }
+                    """)
+                    if key == "OK":
+                        btn.setStyleSheet(btn.styleSheet().replace("#757575", "#4CAF50"))
+                        btn.clicked.connect(self.accept)
+                    elif key == "BKSP":
+                        btn.clicked.connect(self.handle_backspace)
+                    elif key == "SHIFT":
+                        btn.setCheckable(True)
+                        btn.clicked.connect(self.handle_shift)
+                    elif key == "Bỏ qua":
+                        btn.setStyleSheet(btn.styleSheet().replace("#757575", "#f44336"))
+                        btn.clicked.connect(self.reject)
+                    btn.setMinimumWidth(100)
+                elif key == "SPACE":
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #e0e0e0; color: #212121; font-size: 18px; border-radius: 8px; border: 1px solid #bdbdbd;
+                        }
+                        QPushButton:hover { background-color: #d5d5d5; }
+                    """)
+                    btn.setMinimumWidth(300)
+                    btn.clicked.connect(lambda: self.input_field.setText(self.input_field.text() + " "))
+                else:
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: white; color: #212121; font-size: 22px; font-weight: bold; border-radius: 8px; border: 1px solid #e0e0e0;
+                        }
+                        QPushButton:hover { background-color: #f5f5f5; }
+                    """)
+                    btn.clicked.connect(lambda checked, k=key: self.handle_key(k))
+                    btn.setMinimumWidth(60)
+                
+                row_layout.addWidget(btn)
+                self.buttons.append(btn)
+            self.kb_layout.addLayout(row_layout)
+        
+        layout.addLayout(self.kb_layout)
+        
+    def handle_key(self, key):
+        txt = key if self.is_shift else key.lower()
+        self.input_field.setText(self.input_field.text() + txt)
+        # Reset shift sau 1 nốt nếu đang ở chế độ Shift thường (không phải Caps Lock - đơn giản hóa)
+        # Nhưng ở đây để đơn giản cho user nhập liệu photo, ta tạm giữ nguyên
+        
+    def handle_backspace(self):
+        self.input_field.setText(self.input_field.text()[:-1])
+        
+    def handle_shift(self):
+        self.is_shift = not self.is_shift
+        # Cập nhật hiển thị text trên nút
+        for btn in self.buttons:
+            t = btn.text()
+            if len(t) == 1 and t.isalpha():
+                btn.setText(t.upper() if self.is_shift else t.lower())
+
+    def get_text(self):
+        return self.input_field.text().strip()

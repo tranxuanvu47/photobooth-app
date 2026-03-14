@@ -24,6 +24,11 @@ class FrameLayoutManager:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.layouts = data.get("layouts", [])
+                    
+                    # Migration: Convert old 'points' structure to new 'slots' list
+                    for layout in self.layouts:
+                        if "points" in layout and "slots" not in layout:
+                            layout["slots"] = [{"points": layout.pop("points")}]
             except Exception as e:
                 print(f"Lỗi đọc file cấu hình: {e}")
                 self.layouts = []
@@ -41,7 +46,7 @@ class FrameLayoutManager:
             print(f"Lỗi lưu file cấu hình: {e}")
             return False
 
-    def add_layout(self, name, frame_file, width, height, points):
+    def add_layout(self, name, frame_file, width, height, slots):
         # Validate data
         if not name or not frame_file:
             return False, "Tên layout và file khung không được để trống."
@@ -49,15 +54,20 @@ class FrameLayoutManager:
         if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
             return False, "Kích thước khung không hợp lệ."
             
+        if not slots or not isinstance(slots, list):
+            return False, "Danh sách vùng ảnh (slots) không hợp lệ."
+
         required_points = ["top_left", "top_right", "bottom_right", "bottom_left"]
-        for pt in required_points:
-            if pt not in points or "x_percent" not in points[pt] or "y_percent" not in points[pt]:
-                return False, f"Thiếu tọa độ cho {pt}."
-            
-            x = points[pt]["x_percent"]
-            y = points[pt]["y_percent"]
-            if not (0 <= x <= 100) or not (0 <= y <= 100):
-                return False, f"Tọa độ {pt} phải nằm trong khoảng 0-100%."
+        for i, slot in enumerate(slots):
+            points = slot.get("points", {})
+            for pt in required_points:
+                if pt not in points or "x_percent" not in points[pt] or "y_percent" not in points[pt]:
+                    return False, f"Thiếu tọa độ cho {pt} ở slot {i+1}."
+                
+                x = points[pt]["x_percent"]
+                y = points[pt]["y_percent"]
+                if not (0 <= x <= 100) or not (0 <= y <= 100):
+                    return False, f"Tọa độ {pt} ở slot {i+1} phải nằm trong khoảng 0-100%."
 
         # Kiểm tra trùng tên, nếu trùng thì cập nhật (ghi đè)
         new_layout = {
@@ -65,7 +75,7 @@ class FrameLayoutManager:
             "frame_file": frame_file,
             "frame_width": width,
             "frame_height": height,
-            "points": points
+            "slots": slots
         }
         
         updated = False
@@ -82,6 +92,18 @@ class FrameLayoutManager:
             return True, "Lưu cấu hình thành công"
         else:
             return False, "Lỗi khi lưu vào file JSON"
+
+    def delete_layout(self, name):
+        """Xóa layout theo tên"""
+        original_count = len(self.layouts)
+        self.layouts = [l for l in self.layouts if l["name"] != name]
+        
+        if len(self.layouts) < original_count:
+            if self.save_layouts():
+                return True, f"Đã xóa layout '{name}' thành công."
+            else:
+                return False, "Lỗi khi lưu file cấu hình sau khi xóa."
+        return False, f"Không tìm thấy layout '{name}' để xóa."
 
     def get_all_layouts(self):
         return self.layouts

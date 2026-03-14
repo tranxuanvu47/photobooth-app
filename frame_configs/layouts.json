@@ -5,48 +5,208 @@
             "frame_file": "frames/vu_hao_new.png",
             "frame_width": 1446,
             "frame_height": 2170,
-            "points": {
-                "top_left": {
-                    "x_percent": 9.27,
-                    "y_percent": 11.29
-                },
-                "top_right": {
-                    "x_percent": 91.29,
-                    "y_percent": 11.66
-                },
-                "bottom_right": {
-                    "x_percent": 91.29,
-                    "y_percent": 52.4
-                },
-                "bottom_left": {
-                    "x_percent": 9.27,
-                    "y_percent": 52.4
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 9.27,
+                            "y_percent": 11.29
+                        },
+                        "top_right": {
+                            "x_percent": 91.29,
+                            "y_percent": 11.66
+                        },
+                        "bottom_right": {
+                            "x_percent": 91.29,
+                            "y_percent": 52.4
+                        },
+                        "bottom_left": {
+                            "x_percent": 9.27,
+                            "y_percent": 52.4
+                        }
+                    }
                 }
-            }
+            ]
         },
         {
             "name": "vows_08_march",
             "frame_file": "frames/frame-8-march.png",
             "frame_width": 4630,
             "frame_height": 6514,
-            "points": {
-                "top_left": {
-                    "x_percent": 12.05,
-                    "y_percent": 8.94
-                },
-                "top_right": {
-                    "x_percent": 88.94,
-                    "y_percent": 8.94
-                },
-                "bottom_right": {
-                    "x_percent": 88.94,
-                    "y_percent": 42.51
-                },
-                "bottom_left": {
-                    "x_percent": 12.05,
-                    "y_percent": 42.51
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 12.05,
+                            "y_percent": 8.94
+                        },
+                        "top_right": {
+                            "x_percent": 88.94,
+                            "y_percent": 8.94
+                        },
+                        "bottom_right": {
+                            "x_percent": 88.94,
+                            "y_percent": 42.51
+                        },
+                        "bottom_left": {
+                            "x_percent": 12.05,
+                            "y_percent": 42.51
+                        }
+                    }
                 }
-            }
+            ]
+        },
+        {
+            "name": "2image",
+            "frame_file": "frames/Thiết kế chưa có tên.png",
+            "frame_width": 1144,
+            "frame_height": 1728,
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 6.47,
+                            "y_percent": 4.75
+                        },
+                        "top_right": {
+                            "x_percent": 91.96,
+                            "y_percent": 4.75
+                        },
+                        "bottom_right": {
+                            "x_percent": 91.96,
+                            "y_percent": 38.19
+                        },
+                        "bottom_left": {
+                            "x_percent": 6.47,
+                            "y_percent": 38.19
+                        }
+                    }
+                },
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 9.44,
+                            "y_percent": 45.08
+                        },
+                        "top_right": {
+                            "x_percent": 95.54,
+                            "y_percent": 45.08
+                        },
+                        "bottom_right": {
+                            "x_percent": 95.45,
+                            "y_percent": 78.24
+                        },
+                        "bottom_left": {
+                            "x_percent": 9.44,
+                            "y_percent": 78.24
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "svsscsc",
+            "frame_file": "frames/green-dot.png",
+            "frame_width": 842,
+            "frame_height": 1262,
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 11.05,
+                            "y_percent": 13.48
+                        },
+                        "top_right": {
+                            "x_percent": 88.6,
+                            "y_percent": 13.82
+                        },
+                        "bottom_right": {
+                            "x_percent": 87.74,
+                            "y_percent": 47.0
+                        },
+                        "bottom_left": {
+                            "x_percent": 11.4,
+                            "y_percent": 47.0
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "test2",
+            "frame_file": "frames/Thiết kế chưa có tên.png",
+            "frame_width": 1144,
+            "frame_height": 1728,
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 6.62,
+                            "y_percent": 4.72
+                        },
+                        "top_right": {
+                            "x_percent": 92.33,
+                            "y_percent": 4.72
+                        },
+                        "bottom_right": {
+                            "x_percent": 92.68,
+                            "y_percent": 38.13
+                        },
+                        "bottom_left": {
+                            "x_percent": 6.79,
+                            "y_percent": 38.02
+                        }
+                    }
+                },
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 9.76,
+                            "y_percent": 44.82
+                        },
+                        "top_right": {
+                            "x_percent": 95.12,
+                            "y_percent": 45.16
+                        },
+                        "bottom_right": {
+                            "x_percent": 95.47,
+                            "y_percent": 78.34
+                        },
+                        "bottom_left": {
+                            "x_percent": 9.58,
+                            "y_percent": 78.34
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "test xéo",
+            "frame_file": "frames/Thiết kế chưa có tên.png",
+            "frame_width": 1144,
+            "frame_height": 1728,
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 3.48,
+                            "y_percent": 8.41
+                        },
+                        "top_right": {
+                            "x_percent": 87.98,
+                            "y_percent": 0.58
+                        },
+                        "bottom_right": {
+                            "x_percent": 94.77,
+                            "y_percent": 33.76
+                        },
+                        "bottom_left": {
+                            "x_percent": 11.5,
+                            "y_percent": 42.05
+                        }
+                    }
+                }
+            ]
         }
     ]
 }
