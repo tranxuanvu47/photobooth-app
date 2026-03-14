@@ -101,7 +101,7 @@ class CameraWorker(QThread):
                     available_cameras.append((identifier, f"[PTP] {name}"))
                     self.pool[identifier] = name # Lưu name làm dummy value để verify
             except Exception as e:
-                self.error_signal.emit(f"Lỗi quét gphoto2: {e}")
+                print(f"DEBUG: GPhoto Scan Error: {e}")
                 
         # 2. Quét Webcam / OpenCV thông thường
         for i in range(5):
@@ -135,7 +135,7 @@ class CameraWorker(QThread):
         if available_cameras:
             self.status_signal.emit(f"Tìm thấy {len(available_cameras)} máy ảnh. (Mất {elapsed:.2f}s)")
         else:
-            self.error_signal.emit(f"Không tìm thấy máy ảnh nào. (Mất {elapsed:.2f}s)")
+            print(f"DEBUG: No cameras found (Time: {elapsed:.2f}s)")
 
     def _do_preview(self):
         # ======= LUỒNG PTP GPHOTO2 =======
@@ -150,7 +150,7 @@ class CameraWorker(QThread):
                 context = gp.Context()
                 gp.check_result(gp.gp_camera_init(camera, context))
             except Exception as e:
-                self.error_signal.emit(f"Không thể kết nối PTP Camera: {e}")
+                print(f"DEBUG: PTP Connection Error: {e}")
                 self._emit_mock_frame()
                 self.action = "idle"
                 return
@@ -184,7 +184,7 @@ class CameraWorker(QThread):
                             self.image_captured_signal.emit(target_path) # Emit the new target_path
                             self.is_paused = True
                         except Exception as e:
-                            self.error_signal.emit(f"Lỗi khi chụp hoặc tải ảnh PTP: {e}")
+                            print(f"DEBUG: PTP Capture Error: {e}")
                             self.is_paused = False # Resume preview if capture fails
                     
                     if not self.is_paused:
@@ -212,8 +212,9 @@ class CameraWorker(QThread):
                     time.sleep(0.015)
                     
                 except Exception as e:
-                    self.error_signal.emit(f"Lỗi đọc PTP Camera: {e}")
+                    print(f"DEBUG: PTP Error: {e}") # Log to console only
                     self._emit_mock_frame()
+                    time.sleep(2.0) # Throttling on error
                     break
                     
             gp.check_result(gp.gp_camera_exit(camera, context))
@@ -223,7 +224,7 @@ class CameraWorker(QThread):
         try:
             numeric_idx = int(self.camera_index)
         except ValueError:
-            self.error_signal.emit(f"ID Camera không hợp lệ: {self.camera_index}")
+            print(f"DEBUG: Invalid Camera ID: {self.camera_index}")
             self._emit_mock_frame()
             self.action = "idle"
             return
@@ -236,22 +237,21 @@ class CameraWorker(QThread):
             try:
                 cap = cv2.VideoCapture(numeric_idx, BACKEND_FLAG)
                 if not getattr(cap, 'isOpened', lambda: False)():
-                    self.error_signal.emit(f"Không thể mở luồng OpenCV cho camera {numeric_idx}")
+                    print(f"DEBUG: OpenCV stream open failed for {numeric_idx}")
                     self._emit_mock_frame()
                     self.action = "idle"
                     return
                 # Lưu lại cho lần chạy sau
                 self.pool[self.camera_index] = cap
             except Exception as e:
-                self.error_signal.emit(f"Lỗi khởi tạo OpenCV: {e}")
+                print(f"DEBUG: OpenCV Init Error: {e}")
                 self._emit_mock_frame()
                 self.action = "idle"
                 return
                 
             open_time = time.time() - start_time
-            self.status_signal.emit(f"[Debug] Kết nối luồng Camera {self.camera_index} mất {open_time:.2f}s")
-
-        self.status_signal.emit(f"Đang hiển thị Live Preview từ Camera {self.camera_index}...")
+            # Chỉ log kết nối thành công một lần
+            self.status_signal.emit(f"✅ Đang hiển thị Live Preview từ Camera {self.camera_index} (Kết nối: {open_time:.2f}s)")
         
         # Đọc Cấu hình Phần cứng Camera (Zoom, Focus) và gửi lên UI
         try:
@@ -285,8 +285,10 @@ class CameraWorker(QThread):
                 # Cắt Crop tỉ lệ 4:3
                 frame = ImageProcessor.crop_array_to_4_3(frame)
             except Exception as e:
-                self.error_signal.emit(f"Lỗi phần cứng camera: {e}")
+                # Tránh spam log error lên UI, chỉ log ra console
+                print(f"DEBUG: Camera Error (Idx {self.camera_index}): {e}")
                 self._emit_mock_frame()
+                time.sleep(2.0) # Đợi 2s trước khi retry để tránh treo app/spam log
                 break
                 
             if self._capture_pending:
@@ -316,11 +318,8 @@ class CameraWorker(QThread):
                     
                 qt_image = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888).copy()
                 self.frame_signal.emit(qt_image)
-
-            else:
-                self.error_signal.emit("Lỗi đọc tín hiệu frame từ camera (Mất kết nối hoặc thiết bị bị chiếm).")
-                self._emit_mock_frame()
-                break
+            # Nếu đang pause (vd sau khi chụp), ta vẫn giữ loop chạy nhưng không emit frame mới liên tục
+            # Hoặc có thể emit frame cũ. Ở đây ta chỉ đơn giản là không làm gì và lặp tiếp.
                 
             time.sleep(0.015)
 

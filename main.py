@@ -1,7 +1,7 @@
 import sys
 import os
 import shutil
-from PyQt5.QtWidgets import QApplication, QInputDialog, QMessageBox, QFileDialog, QListWidgetItem
+from PyQt5.QtWidgets import QApplication, QInputDialog, QMessageBox, QFileDialog, QListWidgetItem, QDialog
 from PyQt5.QtCore import QTimer, Qt, QSize
 from PyQt5.QtGui import QIcon
 from ui_main import PhotoboothUI
@@ -10,6 +10,7 @@ from image_processor import ImageProcessor
 from printer_service import PrinterService
 from frame_layout_manager import FrameLayoutManager
 from frame_config_dialog import FrameConfigDialog
+from styles import *
 import config
 import pyautogui
 import pygetwindow as gw
@@ -90,6 +91,7 @@ class PhotoboothApp:
         self.ui.btn_delete_lut.clicked.connect(self.delete_lut_action)
         self.ui.btn_add_lut.clicked.connect(self.import_lut_action)
         self.ui.btn_gallery_capture.clicked.connect(self.trigger_capture_one)
+        self.ui.btn_add_icon.clicked.connect(self.add_icon_action)
 
     # --- NAVIGATION ---
     def show_station(self):
@@ -236,6 +238,9 @@ class PhotoboothApp:
         # Thumbnails handled in show_gallery/refresh_thumbnails
 
     def refresh_thumbnails(self, pre_select_path=None):
+        # KHÔNG dọn dẹp icon ở đây nữa vì sẽ làm icon biến mất sau 1s do timer.
+        # Icon chỉ bị dọn dẹp khi on_thumbnail_selected (chọn ảnh khác).
+        
         session_dir = os.path.join(config.RAW_DIR, self.current_session)
         if not os.path.exists(session_dir): os.makedirs(session_dir)
         
@@ -303,12 +308,18 @@ class PhotoboothApp:
     def on_thumbnail_selected(self):
         selected = self.ui.thumbnail_list.selectedItems()
         if selected:
-            self.ui.btn_delete_selected.setEnabled(True)
             path = selected[0].data(Qt.UserRole)
+            # Chỉ reset icon và xử lý nếu chọn ảnh KHÁC ảnh đang hiển thị
+            if path == self.current_image:
+                return
+                
+            self.ui.btn_delete_selected.setEnabled(True)
             self.current_image = path
             self.processed_image = None
             self.state_pre_frame = path # Reset trạng thái pre-frame
             self.ui.gallery_preview_label.set_image(path)
+            # Dọn dẹp icon cũ khi chọn ảnh mới thực sự
+            self.ui.gallery_preview_label.clear_all_icons()
             # Reset selectors
             self.ui.lut_selector.setCurrentIndex(0)
             self.ui.sharpen_selector.setCurrentIndex(0)
@@ -367,10 +378,12 @@ class PhotoboothApp:
         # Nếu là layout_data là None thì xóa khung (về state_pre_frame)
         if layout_data is None:
             self.processed_image = None
+            self.ui.btn_add_icon.setEnabled(False)
             # Nếu có kết quả LUT thì show LUT, ko thì show RAW
             self.ui.gallery_preview_label.set_image(self.state_pre_frame or self.current_image)
             return
 
+        self.ui.btn_add_icon.setEnabled(True)
         self.apply_frame_action(layout_data)
 
     def apply_frame_action(self, layout_data=None):
@@ -384,7 +397,9 @@ class PhotoboothApp:
         if not layout_data: return
         
         try:
-            res = ImageProcessor.apply_frame(img, layout_data)
+            # Lấy icon data từ UI
+            icons_data = self.ui.gallery_preview_label.get_icons_data()
+            res = ImageProcessor.apply_frame(img, layout_data, icons_data=icons_data)
             self.processed_image = res
             self.ui.gallery_preview_label.set_image(res)
         except Exception as e:
@@ -397,6 +412,17 @@ class PhotoboothApp:
         QMessageBox.information(self.ui, "Máy in", "Ảnh đã được gửi đến máy in.")
 
     def save_action(self):
+        # Trước khi save, re-apply frame và merge icon
+        selected_frame = None
+        # Lấy layout đang chọn từ frame_list
+        selected_items = self.ui.frame_list.selectedItems()
+        if selected_items:
+            selected_frame = selected_items[0].data(Qt.UserRole)
+            
+        if selected_frame:
+            # Re-generate processed_image với icons
+            self.apply_frame_action(selected_frame)
+
         img = self.processed_image or self.current_image
         if not img: return
         target, _ = QFileDialog.getSaveFileName(self.ui, "Lưu ảnh", f"PRO_{os.path.basename(img)}", "Images (*.png *.jpg *.jpeg)")
@@ -466,14 +492,29 @@ class PhotoboothApp:
             self.refresh_gallery_data()
             self.ui.log(f"Đã nhập {len(files)} mẫu màu mới.")
 
+    def add_icon_action(self):
+        """Mở thư viện icon chuyên nghiệp và thêm vào preview."""
+        from ui_main import IconSelectionDialog, IconWidget
+        
+        dialog = IconSelectionDialog(self.ui)
+        if dialog.exec_() == QDialog.Accepted:
+            file_path = dialog.selected_path
+            if file_path:
+                from ui_main import IconWidget
+                new_icon = IconWidget(self.ui.gallery_preview_label, file_path)
+                self.ui.log(f"🎨 Đã thêm icon: {os.path.basename(file_path)}")
+            # Sau khi thêm icon, ta cần re-apply frame để merge icon vào processed_image 
+            # (Hoặc để ImageProcessor xử lý khi Save/Print)
+            # Thực tế: Khi save/print mới cần merge thật sự, còn ở UI chỉ là preview nổi
+
     def find_capture_one(self):
-        """Tìm cửa sổ Capture One dựa trên tiêu đề."""
-        keywords = ["Capture One", "Photobooth_DamCuoi"]
-        for title in keywords:
-            wins = gw.getWindowsWithTitle(title)
-            if wins:
-                # Trả về cửa sổ đầu tiên tìm thấy
-                return wins[0]
+        """Tìm cửa sổ Capture One hoặc PhotoBooth (Bất kỳ session nào)."""
+        keywords = ["Capture One", "PhotoBooth"]
+        all_wins = gw.getAllWindows()
+        for win in all_wins:
+            for key in keywords:
+                if key in win.title:
+                    return win
         return None
 
     def trigger_capture_one(self):

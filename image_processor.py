@@ -329,7 +329,7 @@ class ImageProcessor:
             print(f"[CROP Lỗi] Không thể cắt ảnh về tỉ lệ 4:3: {e}")
 
     @staticmethod
-    def apply_frame(image_path, layout_config):
+    def apply_frame(image_path, layout_config, icons_data=None):
         try:
             if not os.path.exists(image_path):
                 raise FileNotFoundError("Không tìm thấy ảnh gốc để chèn khung.")
@@ -389,6 +389,38 @@ class ImageProcessor:
             # Dán chồng ảnh chụp (đã crop xong) LÊN TRÊN cái nền ở đúng tọa độ box
             result.paste(cropped_img, (box_x, box_y))
             
+            # 🎨 CHÈN ICONS TRANG TRÍ
+            if icons_data:
+                for icon in icons_data:
+                    try:
+                        icon_path = icon['path']
+                        if not os.path.exists(icon_path): continue
+                        
+                        icon_img = Image.open(icon_path).convert("RGBA")
+                        
+                        # Tính toán size và pos tuyệt đối trên khung
+                        iw = int(icon['w_percent'] / 100.0 * frame_w)
+                        ih = int(icon['h_percent'] / 100.0 * frame_h)
+                        ix = int(icon['x_percent'] / 100.0 * frame_w)
+                        iy = int(icon['y_percent'] / 100.0 * frame_h)
+                        
+                        if iw <= 0 or ih <= 0: continue
+                        
+                        # Resize icon
+                        icon_img = icon_img.resize((iw, ih), Image.Resampling.LANCZOS)
+                        
+                        # Xoay icon nếu có
+                        rot = icon.get('rotation', 0)
+                        if rot != 0:
+                            icon_img = icon_img.rotate(-rot, expand=True, resample=Image.Resampling.BICUBIC)
+                            # Cân chỉnh lại tọa độ sau khi expanded (rotate expand làm thay đổi anchor)
+                            # Tuy nhiên hiện tại IconWidget chưa xoay anchor, ta tạm để mặc định
+                        
+                        # Dán icon
+                        result.alpha_composite(icon_img, (ix, iy))
+                    except Exception as icon_err:
+                        print(f"[ICON MERGE Lỗi] {icon_err}")
+
             # Đổi về RGB để save jpg
             rgb_im = result.convert('RGB')
             filename = "print_ready_" + os.path.basename(image_path)

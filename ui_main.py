@@ -1,12 +1,14 @@
 import os
+import math
+import time
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QTextEdit, QFrame, QComboBox, 
                              QSizePolicy, QGridLayout, QTabWidget, QTabBar,
                              QSlider, QCheckBox, QGraphicsDropShadowEffect,
                              QStackedWidget, QLineEdit, QListWidget, QListWidgetItem,
-                             QListView)
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QRect, QSize
-from PyQt5.QtGui import QPixmap, QFont, QImage, QPainter, QPen, QColor, QIcon
+                             QListView, QDialog)
+from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QRect, QSize, QPoint
+from PyQt5.QtGui import QPixmap, QFont, QImage, QPainter, QPen, QColor, QIcon, QTransform
 from styles import *
 
 class ImagePreviewLabel(QLabel):
@@ -15,8 +17,9 @@ class ImagePreviewLabel(QLabel):
     zoom_in_signal = pyqtSignal()
     zoom_out_signal = pyqtSignal()
 
-    def __init__(self, placeholder="Chưa có ảnh📸"):
+    def __init__(self, placeholder="Chưa có ảnh📸", interactive=True):
         super().__init__()
+        self.interactive = interactive
         self.setAlignment(Qt.AlignCenter)
         self.setText(placeholder)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
@@ -67,6 +70,10 @@ class ImagePreviewLabel(QLabel):
         bottom_row.addWidget(self.btn_zoom_out)
         bottom_row.addWidget(self.btn_zoom_in)
         overlay_layout.addLayout(bottom_row)
+        
+        if not self.interactive:
+            self.btn_zoom_in.hide()
+            self.btn_zoom_out.hide()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -122,6 +129,285 @@ class ImagePreviewLabel(QLabel):
             painter.setPen(pen)
             painter.drawRect(self.focus_rect)
             painter.end()
+
+    def deselect_all_icons(self, exclude=None):
+        for icon in self.findChildren(IconWidget):
+            if icon != exclude:
+                icon.set_selected(False)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            # Chỉ deselect nếu click vào vùng trống của label (không trúng icon nào)
+            # childAt trả về widget con sâu nhất tại vị trí đó
+            child = self.childAt(event.pos())
+            is_icon_click = False
+            if child:
+                # Kiểm tra xem child có phải là IconWidget hoặc con của IconWidget không
+                parent = child
+                while parent:
+                    if isinstance(parent, IconWidget):
+                        is_icon_click = True
+                        break
+                    parent = parent.parent()
+            
+            if not is_icon_click:
+                self.deselect_all_icons()
+            
+            if self.interactive:
+                x = event.x()
+                y = event.y()
+                self.show_focus_box(x, y)
+                self.clicked_pos.emit(x, y)
+                
+        super().mousePressEvent(event)
+
+    def clear_all_icons(self):
+        for icon in self.findChildren(IconWidget):
+            icon.close()
+
+    def get_icons_data(self):
+        """Trả về dữ liệu icon để ImageProcessor dùng cho render cao nhất."""
+        data = []
+        pw, ph = self.width(), self.height()
+        if pw == 0 or ph == 0: return []
+        
+        for icon in self.findChildren(IconWidget):
+            # Tính toán vị trí và kích thước tương đối (%) trên preview label
+            data.append({
+                'path': icon.icon_path,
+                'x_percent': icon.x() / pw * 100,
+                'y_percent': icon.y() / ph * 100,
+                'w_percent': icon.width() / pw * 100,
+                'h_percent': icon.height() / ph * 100,
+                'rotation': icon.rotation
+            })
+        return data
+
+class IconWidget(QFrame):
+    """Widget đại diện cho một icon có thể di chuyển, phóng to/thu nhỏ, xoay trên ảnh."""
+    deleted = pyqtSignal(object)
+    
+    def __init__(self, parent, icon_path, size=150):
+        super().__init__(parent)
+        self.icon_path = icon_path
+        self.orig_pixmap = QPixmap(icon_path)
+        self.setFixedSize(size, size)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_StyledBackground)
+        
+        self.rotation = 0.0 # Độ xoay (degrees)
+        self.is_selected = False
+        
+        # UI Elements
+        self.label = QLabel(self)
+        self.label.setScaledContents(True)
+        self.label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.update_pixmap()
+        
+        self.btn_delete = QPushButton("✕", self)
+        self.btn_delete.setFixedSize(24, 24)
+        self.btn_delete.setStyleSheet("background: #ff5252; color: white; border-radius: 12px; font-weight: bold; border: none;")
+        self.btn_delete.clicked.connect(self.request_delete)
+        self.btn_delete.hide()
+        
+        # Sizing handle (Bottom Right)
+        self.size_handle = QFrame(self)
+        self.size_handle.setFixedSize(16, 16)
+        self.size_handle.setStyleSheet("background: #FFAB91; border-radius: 8px; border: 2px solid white;")
+        self.size_handle.setCursor(Qt.SizeFDiagCursor)
+        self.size_handle.hide()
+
+        # Rotation handle (Top Center)
+        self.rot_handle = QFrame(self)
+        self.rot_handle.setFixedSize(16, 16)
+        self.rot_handle.setStyleSheet("background: #4CAF50; border-radius: 8px; border: 2px solid white;")
+        self.rot_handle.setCursor(Qt.PointingHandCursor)
+        self.rot_handle.hide()
+
+        self.mouse_pressed = False
+        self.mode = "" # 'move', 'resize', 'rotate'
+        self.drag_start_pos = QPoint()
+        self.resize_start_size = None
+        self.rotate_start_angle = 0.0
+        
+        self.update_handles()
+        self.set_selected(True)
+        
+        # Center in parent
+        if parent:
+            pw, ph = parent.width(), parent.height()
+            self.move((pw - self.width()) // 2, (ph - self.height()) // 2)
+            
+        self.show()
+        self.raise_()
+
+    def update_pixmap(self):
+        if self.orig_pixmap.isNull():
+            print(f"DEBUG: Pixmap is NULL for {self.icon_path}")
+            return
+            
+        # Tạo pixmap xoay để preview
+        if self.rotation == 0:
+            self.label.setPixmap(self.orig_pixmap)
+        else:
+            transform = QTransform().rotate(self.rotation)
+            rotated = self.orig_pixmap.transformed(transform, Qt.SmoothTransformation)
+            self.label.setPixmap(rotated)
+        
+        self.label.show()
+        # Center the label in the widget
+        margin = 20
+        self.label.setGeometry(margin, margin, self.width()-2*margin, self.height()-2*margin)
+
+    def update_handles(self):
+        w, h = self.width(), self.height()
+        self.btn_delete.move(w-26, 2)
+        self.size_handle.move(w-18, h-18)
+        self.rot_handle.move(w//2 - 8, 2)
+
+    def set_selected(self, selected):
+        self.is_selected = selected
+        if selected:
+            self.setStyleSheet("QFrame { border: 2px dashed #FFAB91; background: transparent; }")
+            self.btn_delete.show()
+            self.size_handle.show()
+            self.rot_handle.show()
+        else:
+            self.setStyleSheet("QFrame { border: none; background: transparent; }")
+            self.btn_delete.hide()
+            self.size_handle.hide()
+            self.rot_handle.hide()
+
+    def request_delete(self):
+        self.deleted.emit(self)
+        self.close()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            if self.size_handle.geometry().contains(event.pos()):
+                self.mode = 'resize'
+                self.resize_start_size = self.size()
+            elif self.rot_handle.geometry().contains(event.pos()):
+                self.mode = 'rotate'
+                center = self.rect().center()
+                delta = event.pos() - center
+                self.rotate_start_angle = math.degrees(math.atan2(delta.y(), delta.x())) - self.rotation
+            else:
+                self.mode = 'move'
+                
+            self.mouse_pressed = True
+            self.drag_start_pos = event.globalPos()
+            self.raise_()
+            if hasattr(self.parent(), "deselect_all_icons"):
+                self.parent().deselect_all_icons(exclude=self)
+            
+            event.accept() # Chặn không cho lan truyền lên cha (ImagePreviewLabel)
+            return # Tránh gọi super()
+            
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.mouse_pressed:
+            curr_global_pos = event.globalPos()
+            
+            if self.mode == 'resize':
+                diff = curr_global_pos - self.drag_start_pos
+                new_w = max(50, self.resize_start_size.width() + diff.x())
+                new_h = max(50, self.resize_start_size.height() + diff.y())
+                self.setFixedSize(new_w, new_h)
+                self.update_pixmap()
+                self.update_handles()
+            elif self.mode == 'rotate':
+                center = self.rect().center()
+                delta = event.pos() - center
+                current_angle = math.degrees(math.atan2(delta.y(), delta.x()))
+                self.rotation = current_angle - self.rotate_start_angle
+                self.update_pixmap()
+            elif self.mode == 'move':
+                diff = curr_global_pos - self.drag_start_pos
+                new_pos = self.pos() + diff
+                pw, ph = self.parent().width(), self.parent().height()
+                nx = max(-self.width()//2, min(new_pos.x(), pw - self.width()//2))
+                ny = max(-self.height()//2, min(new_pos.y(), ph - self.height()//2))
+                self.move(nx, ny)
+                self.drag_start_pos = curr_global_pos
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.mouse_pressed = False
+        self.mode = ""
+        super().mouseReleaseEvent(event)
+
+class IconSelectionDialog(QDialog):
+    """Dialog hiển thị thư viện icon được phân loại theo Style."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.selected_path = None
+        self.setWindowTitle("Thư viện Icon Trang trí")
+        self.setFixedSize(800, 600)
+        
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(20, 20, 20, 20)
+        self.layout.setSpacing(15)
+        
+        # Header
+        header = QLabel("🎨 Chọn Icon để trang trí")
+        header.setStyleSheet("font-size: 24px; font-weight: bold;")
+        self.layout.addWidget(header)
+        
+        # Tabs for categories
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane { border: 1px solid #E0E0E0; border-radius: 8px; background: white; }
+            QTabBar::tab { background: #F5F5F5; padding: 10px 20px; margin-right: 5px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-size: 16px; }
+            QTabBar::tab:selected { background: white; border: 1px solid #E0E0E0; border-bottom: none; font-weight: bold; color: #FFAB91; }
+        """)
+        
+        self.categories = {
+            "Modern Color": "color",
+            "Soft Pastel": "pastel",
+            "Hand Doodle": "doodle",
+            "Sweet Cute": "cute"
+        }
+        
+        for label, folder in self.categories.items():
+            tab = QWidget()
+            vbox = QVBoxLayout(tab)
+            list_widget = QListWidget()
+            list_widget.setViewMode(QListWidget.IconMode)
+            list_widget.setIconSize(QSize(120, 120))
+            list_widget.setResizeMode(QListWidget.Adjust)
+            list_widget.setSpacing(15)
+            list_widget.setMovement(QListWidget.Static)
+            list_widget.setStyleSheet(STYLE_FRAME_SELECTOR) # Reuse existing style
+            
+            # Load icons
+            path = os.path.join("assets", "icons", folder)
+            if os.path.exists(path):
+                files = [f for f in os.listdir(path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.ico'))]
+                for f in files:
+                    full_path = os.path.abspath(os.path.join(path, f))
+                    item = QListWidgetItem(QIcon(full_path), "")
+                    item.setData(Qt.UserRole, full_path)
+                    item.setSizeHint(QSize(140, 140))
+                    list_widget.addItem(item)
+            
+            list_widget.itemClicked.connect(self.on_item_clicked)
+            vbox.addWidget(list_widget)
+            self.tabs.addTab(tab, label)
+            
+        self.layout.addWidget(self.tabs)
+        
+        # Cancel Button
+        self.btn_cancel = QPushButton("Đóng")
+        self.btn_cancel.setStyleSheet(STYLE_SECONDARY_BTN)
+        self.btn_cancel.clicked.connect(self.reject)
+        self.layout.addWidget(self.btn_cancel, 0, Qt.AlignRight)
+
+    def on_item_clicked(self, item):
+        self.selected_path = item.data(Qt.UserRole)
+        self.accept()
 
 class ModernFrame(QFrame):
     def __init__(self, style_str=None):
@@ -318,12 +604,9 @@ class PhotoboothUI(QMainWindow):
         sidebar.addStretch()
         
         footer = QHBoxLayout()
-        self.status_msg = QLabel("Hệ thống đã sẵn sàng.")
-        self.status_msg.setStyleSheet("color: #757575; font-size: 18px;")
-        footer.addWidget(self.status_msg)
-        
         footer.addStretch()
-        self.status_dot = QPushButton("🟢 System OK")
+        
+        self.status_dot = QPushButton("🟢 System Ready")
         self.status_dot.setStyleSheet("border: none; color: #4CAF50; font-weight: bold; font-size: 18px; background: transparent;")
         self.status_dot.setCursor(Qt.PointingHandCursor)
         footer.addWidget(self.status_dot)
@@ -363,7 +646,7 @@ class PhotoboothUI(QMainWindow):
         gp_layout = QVBoxLayout(self.gallery_preview_container)
         gp_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.gallery_preview_label = ImagePreviewLabel("Chưa chọn ảnh📸")
+        self.gallery_preview_label = ImagePreviewLabel("Chưa chọn ảnh📸", interactive=False)
         gp_layout.addWidget(self.gallery_preview_label)
         preview_vbox.addWidget(self.gallery_preview_container, stretch=1)
         
@@ -442,6 +725,11 @@ class PhotoboothUI(QMainWindow):
         self.btn_save.setStyleSheet(STYLE_SECONDARY_BTN + "padding: 10px 20px;")
         toolbar.addWidget(self.btn_save)
         
+        self.btn_add_icon = QPushButton("🎨 Thêm Icon")
+        self.btn_add_icon.setEnabled(False) # Chỉ bật khi có khung
+        self.btn_add_icon.setStyleSheet(STYLE_SECONDARY_BTN + "padding: 10px 20px; color: #E91E63; border-color: #E91E63;")
+        toolbar.addWidget(self.btn_add_icon)
+        
         toolbar.addSpacing(20)
         
         preview_vbox.addWidget(toolbar_container)
@@ -491,5 +779,6 @@ class PhotoboothUI(QMainWindow):
         main_area.addLayout(sidebar_vbox, stretch=1)
 
     def log(self, message):
-        self.status_msg.setText(message)
-        print(f"» {message}")
+        # Chỉ print ra console thay vì hiện lên UI
+        timestamp = time.strftime("%H:%M:%S")
+        print(f"[{timestamp}] » {message}")
