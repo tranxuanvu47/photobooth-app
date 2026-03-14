@@ -275,6 +275,12 @@ class FrameConfigDialog(QDialog):
         row_mode.addWidget(self.rb_rect)
         vbox_b.addLayout(row_mode)
         
+        # Mode Instruction Note
+        self.mode_note_label = QLabel("<i>Lưu ý: Click vào từng ô tọa độ rồi nhấn trên ảnh để lấy vị trí.</i>")
+        self.mode_note_label.setWordWrap(True)
+        self.mode_note_label.setStyleSheet("color: #666; font-size: 13px; padding: 5px; background: #f9f9f9; border-left: 3px solid #FFAB91;")
+        vbox_b.addWidget(self.mode_note_label)
+        
         self.form_layout.addWidget(group_base)
         
         # 2. Slots
@@ -394,6 +400,10 @@ class FrameConfigDialog(QDialog):
 
     def on_mode_changed(self, mode_id):
         self.preview.draw_mode = mode_id
+        if mode_id == 1:
+            self.mode_note_label.setText("<i>Lưu ý: Nhấn giữ và kéo chuột trên ảnh để tạo khung vùng ảnh. Tọa độ 4 góc sẽ tự động được điền.</i>")
+        else:
+            self.mode_note_label.setText("<i>Lưu ý: Click vào từng ô tọa độ (x% / y%) rồi nhấn trên ảnh để lấy vị trí chính xác của điểm đó.</i>")
         self.preview.update()
 
     def on_rect_selected(self, x, y, w, h):
