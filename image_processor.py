@@ -4,6 +4,7 @@ import os
 import cv2
 import numpy as np
 from config import OUTPUT_DIR, FRAME_PATH
+from utils.image_utils import safe_cv2_imread, safe_cv2_imwrite
 
 class ImageProcessor:
     @staticmethod
@@ -16,7 +17,7 @@ class ImageProcessor:
             if not os.path.exists(image_path):
                 return image_path
             
-            img = cv2.imread(image_path)
+            img = safe_cv2_imread(image_path)
             if img is None:
                 return image_path
 
@@ -49,7 +50,7 @@ class ImageProcessor:
                 np.copyto(sharpened, img, where=low_contrast_mask)
 
             # Ghi đè trực tiếp lên file gốc để đồng bộ luồng preview/print
-            cv2.imwrite(image_path, sharpened, [int(cv2.IMWRITE_JPEG_QUALITY), 98])
+            safe_cv2_imwrite(image_path, sharpened, [int(cv2.IMWRITE_JPEG_QUALITY), 98])
             print(f"[SHARPEN] Đã làm nét ảnh ({level}): {image_path}")
             return image_path
             
@@ -314,7 +315,7 @@ class ImageProcessor:
             if not os.path.exists(image_path):
                 return
                 
-            img = cv2.imread(image_path)
+            img = safe_cv2_imread(image_path)
             if img is None:
                 return
                 
@@ -322,7 +323,7 @@ class ImageProcessor:
             
             # Nếu mảng trả về có khác biệt kích thước thì mới ghi đè
             if cropped_img.shape != img.shape:
-                cv2.imwrite(image_path, cropped_img)
+                safe_cv2_imwrite(image_path, cropped_img)
                 print(f"[CROP] Đã tự động cắt ảnh về tỉ lệ 4:3: {image_path}")
                 
         except Exception as e:

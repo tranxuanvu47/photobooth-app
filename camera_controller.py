@@ -7,6 +7,7 @@ import time
 import os
 import cv2
 import numpy as np
+from utils.image_utils import safe_cv2_imwrite
 
 # Xác định cờ backend trên Windows.
 # ANY (mặc định MSMF trên Win) mở chậm nhưng ổn định dải màu hơn.
@@ -305,7 +306,7 @@ class CameraWorker(QThread):
                 os.makedirs(session_dir, exist_ok=True)
                 
                 target_path = os.path.join(session_dir, filename)
-                cv2.imwrite(target_path, frame)
+                safe_cv2_imwrite(target_path, frame)
                 print(f"[OpenCV] Đã chụp và lưu ảnh thô RAW (chuẩn 4:3): {target_path}")
                 self.status_signal.emit("Tải ảnh hoàn tất!")
                 self.image_captured_signal.emit(target_path)
