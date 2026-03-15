@@ -6,9 +6,9 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLa
                              QListWidgetItem, QAbstractItemView, QGraphicsDropShadowEffect, 
                              QProgressBar, QStyledItemDelegate, QStyle, QTextEdit, QComboBox, 
                              QSizePolicy, QTabWidget, QTabBar, QSlider, QCheckBox, 
-                             QStackedWidget, QLineEdit, QListView, QDialog, QApplication)
+                             QStackedWidget, QLineEdit, QListView, QDialog, QApplication, QShortcut)
 from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint, QRect, QPropertyAnimation, QEasingCurve, QTimer
-from PyQt5.QtGui import QPixmap, QFont, QImage, QPainter, QPen, QColor, QIcon, QTransform, QMovie
+from PyQt5.QtGui import QPixmap, QFont, QImage, QPainter, QPen, QColor, QIcon, QTransform, QMovie, QKeySequence
 from styles import *
 
 class NoSelectionDelegate(QStyledItemDelegate):
@@ -60,6 +60,49 @@ class LoadingOverlay(QWidget):
         if self.parent():
             self.resize(self.parent().size())
             self.raise_()
+class LogViewerDialog(QDialog):
+    """Hộp thoại hiển thị lịch sử Log của ứng dụng."""
+    def __init__(self, parent=None, logs=None):
+        super().__init__(parent)
+        self.setWindowTitle("Nhật ký hệ thống (Logs) 📜")
+        self.setFixedSize(800, 600)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        self.log_area = QTextEdit()
+        self.log_area.setReadOnly(True)
+        self.log_area.setFont(QFont("Consolas", 12))
+        self.log_area.setStyleSheet("""
+            QTextEdit {
+                background-color: #1a1a1a;
+                color: #00ff00;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+        
+        # Format logs
+        if logs:
+            self.log_area.setPlainText("\n".join(logs))
+        else:
+            self.log_area.setPlainText("Chưa có nhật ký nào.")
+            
+        layout.addWidget(self.log_area)
+        
+        # Nút đóng and Clear
+        btn_layout = QHBoxLayout()
+        self.btn_close = QPushButton("Đóng")
+        self.btn_close.setStyleSheet(STYLE_SECONDARY_BTN)
+        self.btn_close.clicked.connect(self.accept)
+        
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_close)
+        layout.addLayout(btn_layout)
+        
+        # Scroll to bottom
+        self.log_area.verticalScrollBar().setValue(self.log_area.verticalScrollBar().maximum())
+
 class CaptureReviewDialog(QDialog):
     """Hộp thoại xem lại ảnh ngay sau khi chụp."""
     def __init__(self, parent=None, pixmap=None, current_idx=1, total=1):
@@ -609,6 +652,94 @@ class IconSelectionDialog(QDialog):
         self.selected_path = item.data(Qt.UserRole)
         self.accept()
 
+class NextcloudConfigDialog(QDialog):
+    """Hộp thoại cấu hình Nextcloud (URL, Account, Root Folder)."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Cấu hình Nextcloud ☁️")
+        self.setFixedSize(600, 560)
+        import config
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(15)
+        
+        header = QLabel("☁️ Cài đặt Nextcloud")
+        header.setStyleSheet("font-size: 22px; font-weight: bold; color: #1976D2;")
+        layout.addWidget(header)
+        
+        # Form
+        form = QGridLayout()
+        form.setSpacing(10)
+        
+        self.cb_enabled = QCheckBox("Kích hoạt Upload Nextcloud")
+        self.cb_enabled.setChecked(config.NC_ENABLED)
+        self.cb_enabled.setStyleSheet("font-size: 16px; font-weight: bold;")
+        form.addWidget(self.cb_enabled, 0, 0, 1, 2)
+        
+        form.addWidget(QLabel("WebDAV URL:"), 1, 0)
+        self.txt_url = QLineEdit(config.NC_URL)
+        form.addWidget(self.txt_url, 1, 1)
+        
+        form.addWidget(QLabel("Username:"), 2, 0)
+        self.txt_user = QLineEdit(config.NC_USER)
+        form.addWidget(self.txt_user, 2, 1)
+        
+        form.addWidget(QLabel("App Password:"), 3, 0)
+        self.txt_pass = QLineEdit(config.NC_PASS)
+        self.txt_pass.setEchoMode(QLineEdit.Password)
+        form.addWidget(self.txt_pass, 3, 1)
+        
+        form.addWidget(QLabel("Thư mục gốc:"), 4, 0)
+        self.txt_root = QLineEdit(config.NC_REMOTE_PATH)
+        self.txt_root.setPlaceholderText("Mặc định: Photobooth")
+        form.addWidget(self.txt_root, 4, 1)
+        
+        form.addWidget(QLabel("Public Share URL:"), 5, 0)
+        self.txt_share_url = QLineEdit(config.NC_SHARE_URL)
+        self.txt_share_url.setPlaceholderText("Link chia sẻ công khai...")
+        form.addWidget(self.txt_share_url, 5, 1)
+        
+        self.btn_auto_share = QPushButton("🪄 Tự động lấy Link chia sẻ")
+        self.btn_auto_share.setStyleSheet(STYLE_ADMIN_GHOST_BTN + "background-color: #E3F2FD; color: #1976D2;")
+        form.addWidget(self.btn_auto_share, 6, 1)
+        
+        layout.addLayout(form)
+        
+        tip = QLabel("💡 Thư mục khách hàng sẽ được tạo bên trong thư mục gốc này.")
+        tip.setStyleSheet("color: #666; font-style: italic;")
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+        
+        layout.addStretch()
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        self.btn_save = QPushButton("Lưu cấu hình")
+        self.btn_save.setStyleSheet(STYLE_PRIMARY_BTN)
+        self.btn_save.clicked.connect(self.save_and_close)
+        
+        self.btn_cancel = QPushButton("Hủy")
+        self.btn_cancel.setStyleSheet(STYLE_SECONDARY_BTN)
+        self.btn_cancel.clicked.connect(self.reject)
+        
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_cancel)
+        btn_layout.addWidget(self.btn_save)
+        layout.addLayout(btn_layout)
+
+    def save_and_close(self):
+        import config
+        config.NC_ENABLED = self.cb_enabled.isChecked()
+        config.NC_URL = self.txt_url.text().strip()
+        config.NC_USER = self.txt_user.text().strip()
+        config.NC_PASS = self.txt_pass.text().strip()
+        root = self.txt_root.text().strip()
+        config.NC_REMOTE_PATH = root if root else "Photobooth"
+        config.NC_SHARE_URL = self.txt_share_url.text().strip()
+        config.save_config()
+        self.accept()
+
 class ModernFrame(QFrame):
     def __init__(self, style_str=None):
         super().__init__()
@@ -622,6 +753,9 @@ class ModernFrame(QFrame):
         self.setGraphicsEffect(shadow)
 
 class PhotoboothUI(QMainWindow):
+    admin_requested = pyqtSignal()
+    full_screen_requested = pyqtSignal()
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Photobooth Station Pro")
@@ -641,6 +775,13 @@ class PhotoboothUI(QMainWindow):
         qr.moveCenter(cp)
         self.move(qr.topLeft())
         
+        # Setup Global Shortcuts
+        self.shortcut_admin = QShortcut(QKeySequence("Ctrl+7"), self)
+        self.shortcut_admin.activated.connect(self.admin_requested.emit)
+        
+        self.shortcut_fullscreen = QShortcut(QKeySequence("Alt+Return"), self)
+        self.shortcut_fullscreen.activated.connect(self.full_screen_requested.emit)
+        
         self.central_widget = QStackedWidget()
         self.setCentralWidget(self.central_widget)
         
@@ -657,6 +798,25 @@ class PhotoboothUI(QMainWindow):
         # Loading Overlay
         self.loading_overlay = LoadingOverlay(self)
         self.loading_overlay.hide()
+        
+        # Log buffer for viewing
+        self.log_buffer = []
+        
+        # --- LOG BUTTON (Global - Floating at Bottom Right) ---
+        self.btn_show_log = QPushButton("📜 Xem Log", self)
+        self.btn_show_log.setFixedSize(120, 40)
+        self.btn_show_log.setCursor(Qt.PointingHandCursor)
+        self.btn_show_log.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(33, 33, 33, 60%);
+                color: white;
+                font-weight: bold;
+                border-radius: 20px;
+                border: 1px solid rgba(255, 255, 255, 20%);
+            }
+            QPushButton:hover { background-color: rgba(33, 33, 33, 90%); }
+        """)
+        self.btn_show_log.raise_()
 
     def show_loading(self, message="Đang xử lý..."):
         self.loading_overlay.resizeToParent()
@@ -684,7 +844,7 @@ class PhotoboothUI(QMainWindow):
         self.btn_admin_setup = QPushButton("⚙️ Admin Setup")
         self.btn_admin_setup.setStyleSheet(STYLE_ADMIN_GHOST_BTN)
         self.btn_admin_setup.setCursor(Qt.PointingHandCursor)
-        self.btn_admin_setup.setCursor(Qt.PointingHandCursor)
+        self.btn_admin_setup.hide() # Ẩn nút theo yêu cầu
         header.addWidget(self.btn_admin_setup)
         layout.addLayout(header)
         
@@ -733,6 +893,34 @@ class PhotoboothUI(QMainWindow):
         sidebar.setContentsMargins(10, 20, 10, 20)
         sidebar.setSpacing(15) # Gần nhau hơn
         main_area.addLayout(sidebar, stretch=1)
+        
+        # --- QR CODE BLOCK (Top of Sidebar) ---
+        self.qr_container = ModernFrame() # Dùng ModernFrame để có shadow
+        self.qr_container.setStyleSheet(STYLE_SIDEBAR_BLOCK + "padding: 5px;")
+        # Vô hiệu hóa hand cursor và tooltip để ẩn tính năng nhấn vào
+        
+        qr_vbox = QVBoxLayout(self.qr_container)
+        qr_vbox.setContentsMargins(10, 10, 10, 10)
+        qr_vbox.setSpacing(5)
+        
+        lbl_qr_title = QLabel("📲 QUÉT ĐỂ NHẬN ẢNH")
+        lbl_qr_title.setAlignment(Qt.AlignCenter)
+        lbl_qr_title.setStyleSheet("font-weight: bold; color: #E91E63; font-size: 14px;")
+        qr_vbox.addWidget(lbl_qr_title)
+        
+        self.qr_code_label = QLabel()
+        self.qr_code_label.setFixedSize(220, 220)
+        self.qr_code_label.setScaledContents(True)
+        self.qr_code_label.setAlignment(Qt.AlignCenter)
+        self.qr_code_label.setStyleSheet("background-color: white; border: 1px dashed #ddd; border-radius: 8px; color: #888; font-size: 16px;")
+        qr_vbox.addWidget(self.qr_code_label, 0, Qt.AlignCenter)
+        
+        lbl_qr_hint = QLabel("Nhấn vào để cài đặt Link 🔗")
+        lbl_qr_hint.setAlignment(Qt.AlignCenter)
+        lbl_qr_hint.setStyleSheet("color: #999; font-size: 11px; font-style: italic;")
+        qr_vbox.addWidget(lbl_qr_hint)
+        
+        sidebar.addWidget(self.qr_container)
         
         # Thêm stretch ở trên để đẩy content vào giữa
         sidebar.addStretch()
@@ -1022,6 +1210,29 @@ class PhotoboothUI(QMainWindow):
         sidebar_vbox = QVBoxLayout()
         main_area.addLayout(sidebar_vbox, stretch=2)
         
+        # --- QR CODE BLOCK (Top of Gallery Sidebar) ---
+        self.qr_container_gallery = ModernFrame()
+        self.qr_container_gallery.setStyleSheet(STYLE_SIDEBAR_BLOCK + "padding: 5px;")
+        
+        qr_vbox_g = QVBoxLayout(self.qr_container_gallery)
+        qr_vbox_g.setContentsMargins(10, 10, 10, 10)
+        qr_vbox_g.setSpacing(5)
+        
+        lbl_qr_title_g = QLabel("📲 QUÉT ĐỂ NHẬN ẢNH")
+        lbl_qr_title_g.setAlignment(Qt.AlignCenter)
+        lbl_qr_title_g.setStyleSheet("font-weight: bold; color: #E91E63; font-size: 14px;")
+        qr_vbox_g.addWidget(lbl_qr_title_g)
+        
+        self.qr_code_label_gallery = QLabel()
+        self.qr_code_label_gallery.setFixedSize(220, 220)
+        self.qr_code_label_gallery.setScaledContents(True)
+        self.qr_code_label_gallery.setAlignment(Qt.AlignCenter)
+        self.qr_code_label_gallery.setStyleSheet("background-color: white; border: 1px dashed #ddd; border-radius: 8px; color: #888; font-size: 16px;")
+        qr_vbox_g.addWidget(self.qr_code_label_gallery, 0, Qt.AlignCenter)
+        
+        sidebar_vbox.addWidget(self.qr_container_gallery)
+        sidebar_vbox.addSpacing(10)
+        
         # Gallery Header: 2 hàng (2x2 grid)
         gallery_header_grid = QGridLayout()
         gallery_header_grid.setSpacing(5)
@@ -1068,6 +1279,13 @@ class PhotoboothUI(QMainWindow):
         self.thumbnail_list.setCursor(Qt.PointingHandCursor)
         
         main_area.addLayout(sidebar_vbox, stretch=1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # Định vị nút Log ở góc dưới bên phải, tránh che khuất System Ready
+        if hasattr(self, 'btn_show_log'):
+            self.btn_show_log.move(self.width() - 140, self.height() - 100)
+            self.btn_show_log.raise_()
 
     def update_preview_image(self, image_path):
         if image_path:
@@ -1122,9 +1340,15 @@ class PhotoboothUI(QMainWindow):
             self.logo_label.setText("🍑 PHOTOBOOTH STATION")
 
     def log(self, message):
-        # Chỉ print ra console thay vì hiện lên UI
+        # Lưu vào buffer và print ra console
         timestamp = time.strftime("%H:%M:%S")
-        print(f"[{timestamp}] » {message}")
+        log_msg = f"[{timestamp}] » {message}"
+        self.log_buffer.append(log_msg)
+        # Giới hạn buffer tầm 1000 dòng để tránh tốn ram
+        if len(self.log_buffer) > 1000:
+            self.log_buffer.pop(0)
+            
+        print(log_msg)
 
 class VirtualKeyboardDialog(QDialog):
     """Bàn phím ảo thuận tiện cho màn hình cảm ứng khi nhập tên khách."""

@@ -207,6 +207,62 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "layout_3",
+            "frame_file": "frames/xong-2.png",
+            "frame_width": 842,
+            "frame_height": 1262,
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 5.53,
+                            "y_percent": 16.24
+                        },
+                        "top_right": {
+                            "x_percent": 94.82,
+                            "y_percent": 16.24
+                        },
+                        "bottom_right": {
+                            "x_percent": 94.82,
+                            "y_percent": 56.11
+                        },
+                        "bottom_left": {
+                            "x_percent": 5.53,
+                            "y_percent": 56.11
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "test 3",
+            "frame_file": "frames/xong-2.png",
+            "frame_width": 842,
+            "frame_height": 1262,
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 5.35,
+                            "y_percent": 16.13
+                        },
+                        "top_right": {
+                            "x_percent": 94.65,
+                            "y_percent": 16.13
+                        },
+                        "bottom_right": {
+                            "x_percent": 94.65,
+                            "y_percent": 56.11
+                        },
+                        "bottom_left": {
+                            "x_percent": 5.35,
+                            "y_percent": 56.11
+                        }
+                    }
+                }
+            ]
         }
     ]
 }

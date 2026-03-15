@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime
 from PyQt5.QtWidgets import QApplication, QInputDialog, QMessageBox, QFileDialog, QListWidgetItem, QDialog, QMenu, QAction
 from PyQt5.QtCore import QTimer, Qt, QSize
-from PyQt5.QtGui import QIcon, QPixmap
+from PyQt5.QtGui import QIcon, QPixmap, QImage
 from ui_main import PhotoboothUI
 from camera_controller import CameraWorker
 from image_processor import ImageProcessor
@@ -16,6 +16,10 @@ import config
 import pyautogui
 import pygetwindow as gw
 import time
+import threading
+from nextcloud_utils import upload_to_nextcloud
+import qrcode
+from io import BytesIO
 
 class PhotoboothApp:
     def __init__(self):
@@ -66,14 +70,89 @@ class PhotoboothApp:
         self.setup_connections()
         self.refresh_gallery_data()
         self.scan_cameras()
+        self.update_qr_code()
         
+    def _async_upload(self, local_path, subfolder, remote_name=None):
+        if not config.NC_ENABLED:
+            self.ui.log("☁️ Nextcloud upload is disabled in config.py")
+            return
+            
+        def run_upload():
+            nc_config = {
+                'NC_ENABLED': config.NC_ENABLED,
+                'NC_URL': config.NC_URL,
+                'NC_USER': config.NC_USER,
+                'NC_PASS': config.NC_PASS,
+                'NC_REMOTE_PATH': config.NC_REMOTE_PATH
+            }
+            success, msg = upload_to_nextcloud(nc_config, local_path, subfolder, remote_name)
+            if success:
+                self.ui.log(f"☁️ Nextcloud: Đã upload thành công {os.path.basename(local_path)}")
+            else:
+                self.ui.log(f"☁️ Nextcloud Error: {msg}")
+                
+        thread = threading.Thread(target=run_upload)
+        thread.daemon = True
+        thread.start()
+        
+    def update_qr_code(self):
+        if not hasattr(self.ui, 'qr_code_label'): return
+        
+        def do_update():
+            url = config.NC_SHARE_URL
+            
+            # Nếu chưa có link nhưng đã bật Nextcloud, tự động thử lấy link
+            if not url and config.NC_ENABLED:
+                from nextcloud_utils import nc_get_public_link
+                success, result = nc_get_public_link({
+                    'NC_URL': config.NC_URL,
+                    'NC_USER': config.NC_USER,
+                    'NC_PASS': config.NC_PASS,
+                    'NC_REMOTE_PATH': config.NC_REMOTE_PATH
+                })
+                if success:
+                    config.NC_SHARE_URL = result
+                    config.save_config()
+                    url = result
+                    self.ui.log(f"🔗 Tự động nhận diện share URL: {url}")
+
+            if not url:
+                self.ui.qr_code_label.clear()
+                self.ui.qr_code_label.setText("Chưa có link\nchia sẻ 🔗")
+                return
+                
+            try:
+                qr = qrcode.QRCode(version=1, box_size=10, border=2)
+                qr.add_data(url)
+                qr.make(fit=True)
+                img = qr.make_image(fill_color="black", back_color="white")
+                
+                # Convert to QPixmap
+                buffer = BytesIO()
+                img.save(buffer, format="PNG")
+                qimg = QImage.fromData(buffer.getvalue())
+                pixmap = QPixmap.fromImage(qimg)
+                self.ui.qr_code_label.setPixmap(pixmap)
+                if hasattr(self.ui, 'qr_code_label_gallery'):
+                    self.ui.qr_code_label_gallery.setPixmap(pixmap)
+                self.ui.log("🔄 Đã cập nhật mã QR Nextcloud.")
+            except Exception as e:
+                self.ui.log(f"🛑 Lỗi tạo QR: {e}")
+
+        # Chạy trong thread để không lock UI khi gọi OCS API
+        thread = threading.Thread(target=do_update)
+        thread.daemon = True
+        thread.start()
+
     def setup_connections(self):
         self.ui.btn_capture.clicked.connect(self.capture_image)
         self.ui.btn_to_gallery.clicked.connect(self.show_gallery)
         self.ui.btn_admin_setup.clicked.connect(self.open_admin_setup)
         self.ui.session_selector.currentIndexChanged.connect(self.on_session_changed)
         self.ui.camera_selector.currentIndexChanged.connect(self.on_camera_selected)
-        # Camera connection is now automatic on startup
+        # Connect hotkeys for Admin Setup and Full Screen
+        self.ui.admin_requested.connect(self.open_admin_setup)
+        self.ui.full_screen_requested.connect(self.toggle_full_screen)
         
         self.ui.btn_session_add.clicked.connect(self.handle_new_session)
         self.ui.btn_session_rename.clicked.connect(self.handle_rename_session)
@@ -101,6 +180,18 @@ class PhotoboothApp:
         self.ui.btn_add_lut.clicked.connect(self.import_lut_action)
         self.ui.btn_gallery_capture.clicked.connect(self.trigger_capture_one)
         self.ui.btn_add_icon.clicked.connect(self.add_icon_action)
+        self.ui.btn_show_log.clicked.connect(self.show_log_action)
+
+    def toggle_full_screen(self):
+        if self.ui.isFullScreen():
+            self.ui.showNormal()
+        else:
+            self.ui.showFullScreen()
+
+    def show_log_action(self):
+        from ui_main import LogViewerDialog
+        dialog = LogViewerDialog(self.ui, self.ui.log_buffer)
+        dialog.exec_()
 
     def show_station(self):
         self.refresh_timer.stop()
@@ -153,7 +244,46 @@ class PhotoboothApp:
         act_mode.triggered.connect(self.toggle_app_mode)
         menu.addAction(act_mode)
         
-        menu.exec_(self.ui.btn_admin_setup.mapToGlobal(self.ui.btn_admin_setup.rect().bottomLeft()))
+        menu.addSeparator()
+        act_nc = QAction("☁️ Cấu hình Nextcloud", self.ui)
+        act_nc.triggered.connect(self.handle_nc_config)
+        menu.addAction(act_nc)
+        
+        # Hiện menu ở góc trên cùng bên phải màn hình (hoặc cửa sổ)
+        pos = self.ui.rect().topRight()
+        global_pos = self.ui.mapToGlobal(pos)
+        # Lùi lại một chút để không bị dính sát mép
+        global_pos.setX(global_pos.x() - menu.sizeHint().width())
+        menu.exec_(global_pos)
+
+    def handle_nc_config(self):
+        from ui_main import NextcloudConfigDialog
+        from PyQt5.QtWidgets import QMessageBox
+        dialog = NextcloudConfigDialog(self.ui)
+        
+        def run_auto_share():
+            from nextcloud_utils import nc_get_public_link
+            import config
+            # Lấy tạm cấu hình từ các ô input
+            tmp_config = {
+                'NC_URL': dialog.txt_url.text().strip(),
+                'NC_USER': dialog.txt_user.text().strip(),
+                'NC_PASS': dialog.txt_pass.text().strip(),
+                'NC_REMOTE_PATH': dialog.txt_root.text().strip()
+            }
+            self.ui.log("⌛ Đang tự động thiết lập chia sẻ Nextcloud...")
+            success, result = nc_get_public_link(tmp_config)
+            if success:
+                dialog.txt_share_url.setText(result)
+                self.ui.log(f"✅ Tự động lấy link thành công: {result}")
+            else:
+                QMessageBox.warning(dialog, "Lỗi", f"Không thể lấy link tự động:\n{result}")
+                self.ui.log(f"🛑 Lỗi tự động chia sẻ: {result}")
+
+        dialog.btn_auto_share.clicked.connect(run_auto_share)
+        
+        if dialog.exec_():
+            self.update_qr_code()
 
     def handle_add_layout(self):
         dialog = FrameConfigDialog(self.ui)
@@ -307,6 +437,10 @@ class PhotoboothApp:
         if dialog.exec_() == QDialog.Accepted:
             # OK -> Chấp nhận tấm này
             self.captured_sequence_paths.append(path)
+            
+            # Upload to Nextcloud asynchronously (Raw)
+            self._async_upload(path, self.current_session)
+            
             self.remaining_captures -= 1
             
             if self.remaining_captures > 0:
@@ -497,6 +631,8 @@ class PhotoboothApp:
             self.ui.show_loading("Đang gửi lệnh in...")
             try:
                 PrinterService.print_image(self.processed_image)
+                # Upload to Nextcloud asynchronously (Output)
+                self._async_upload(self.processed_image, self.current_session)
                 QMessageBox.information(self.ui, "Máy in", "Đã gửi in.")
             finally:
                 self.ui.hide_loading()
@@ -507,6 +643,8 @@ class PhotoboothApp:
                 self.ui.show_loading("Đang lưu ảnh...")
                 try:
                     shutil.copy2(self.processed_image, target)
+                    # Upload to Nextcloud asynchronously (Output)
+                    self._async_upload(self.processed_image, self.current_session)
                 finally:
                     self.ui.hide_loading()
 
