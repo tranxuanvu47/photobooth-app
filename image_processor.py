@@ -330,10 +330,11 @@ class ImageProcessor:
             print(f"[CROP Lỗi] Không thể cắt ảnh về tỉ lệ 4:3: {e}")
 
     @staticmethod
-    def apply_frame(image_paths, layout_config, icons_data=None):
+    def apply_frame(image_paths, layout_config, icons_data=None, slot_offsets=None):
         """
         image_paths: List các đường dẫn ảnh (có thể có None nếu slot trống)
         layout_config: Config object chứa list 'slots'
+        slot_offsets: List các dictionary [{'x': 0, 'y': 0}, ...] chứa độ lệch bù trừ (offset) cho từng slot
         """
         try:
             # 1. Load frame overlay (Background)
@@ -360,6 +361,12 @@ class ImageProcessor:
                 if not os.path.exists(path):
                     continue
 
+                # Lấy offset nếu có
+                offset_x, offset_y = 0, 0
+                if slot_offsets and i < len(slot_offsets):
+                    offset_x = slot_offsets[i].get('x', 0)
+                    offset_y = slot_offsets[i].get('y', 0)
+
                 points = slot["points"]
                 # Tính toán Bounding Box từ tọa độ %
                 min_x = min(points["top_left"]["x_percent"], points["bottom_left"]["x_percent"]) / 100.0 * frame_w
@@ -376,7 +383,8 @@ class ImageProcessor:
 
                 # Load và resize ảnh chụp
                 with Image.open(path).convert("RGBA") as base_img:
-                    img_aspect = base_img.width / base_img.height
+                    img_w, img_h = base_img.size
+                    img_aspect = img_w / img_h
                     box_aspect = box_w / box_h
                     
                     if img_aspect > box_aspect:
@@ -388,11 +396,23 @@ class ImageProcessor:
                         
                     resized_img = base_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
                     
-                    left = (new_w - box_w) / 2
-                    top = (new_h - box_h) / 2
-                    right = (new_w + box_w) / 2
-                    bottom = (new_h + box_h) / 2
-                    cropped_img = resized_img.crop((left, top, right, bottom))
+                    # Tính toán vùng crop (mặc định là chính giữa) cộng thêm offset
+                    # Tọa độ left_base/top_base là vị trí trung tâm
+                    left_base = (new_w - box_w) / 2
+                    top_base = (new_h - box_h) / 2
+                    
+                    # Áp dụng offset (đảo dấu vì kéo chuột xuôi thì ảnh lùi lại)
+                    left = left_base - offset_x
+                    top = top_base - offset_y
+                    
+                    # Giới hạn (Clamp) để không bị lộ vùng trống ngoài ảnh
+                    left = max(0, min(left, new_w - box_w))
+                    top = max(0, min(top, new_h - box_h))
+                    
+                    right = left + box_w
+                    bottom = top + box_h
+                    
+                    cropped_img = resized_img.crop((int(left), int(top), int(right), int(bottom)))
                     
                     # Dán chồng ảnh chụp vào background
                     result.paste(cropped_img, (box_x, box_y))
@@ -421,8 +441,6 @@ class ImageProcessor:
                         rot = icon.get('rotation', 0)
                         if rot != 0:
                             icon_img = icon_img.rotate(-rot, expand=True, resample=Image.Resampling.BICUBIC)
-                            # Cân chỉnh lại tọa độ sau khi expanded (rotate expand làm thay đổi anchor)
-                            # Tuy nhiên hiện tại IconWidget chưa xoay anchor, ta tạm để mặc định
                         
                         # Dán icon
                         result.alpha_composite(icon_img, (ix, iy))

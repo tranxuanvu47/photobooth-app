@@ -254,6 +254,8 @@ class ImagePreviewLabel(QLabel):
     clicked_pos = pyqtSignal(int, int) # Signal phát ra tọa độ x,y khi user click
     zoom_in_signal = pyqtSignal()
     zoom_out_signal = pyqtSignal()
+    panning_signal = pyqtSignal(int, float, float) # (slot_index, dx, dy)
+    panning_finished_signal = pyqtSignal()
 
     def __init__(self, placeholder="Chưa có ảnh📸", interactive=True):
         super().__init__()
@@ -263,6 +265,24 @@ class ImagePreviewLabel(QLabel):
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.setMinimumSize(400, 300)
         self.pixmap_img = None
+        
+        # Panning/Dragging state
+        self.layout_data = None
+        self.is_dragging = False
+        self.last_mouse_pos = QPoint()
+        self.active_slot_index = -1
+        
+        # Fast Preview Data (Caches to avoid Disk I/O)
+        self.cached_slot_pixmaps = {} # {slot_index: QPixmap}
+        self.cached_frame_pixmap = None
+        self.current_slot_offsets = [] # [{'x': 0, 'y': 0}, ...]
+        self.use_fast_preview = False
+        
+        # Pre-calculated geometry to save CPU in paintEvent
+        self._target_rect = QRect()
+        self._draw_scale = 1.0
+        self._ox = 0
+        self._oy = 0
         
         # Biến phục vụ vẽ focus box
         self.focus_rect = None
@@ -320,11 +340,118 @@ class ImagePreviewLabel(QLabel):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            x = event.x()
-            y = event.y()
-            self.show_focus_box(x, y)
-            self.clicked_pos.emit(x, y)
+            # 1. Xử lý deselect icons
+            child = self.childAt(event.pos())
+            is_icon_click = False
+            if child:
+                parent = child
+                while parent:
+                    if isinstance(parent, IconWidget):
+                        is_icon_click = True
+                        break
+                    parent = parent.parent()
+            
+            if not is_icon_click:
+                self.deselect_all_icons()
+            
+            # 2. Xử lý Panning hoặc Focus Box
+            if self.interactive:
+                x, y = event.x(), event.y()
+                
+                # Kiểm tra xem có trúng ô ảnh (slot) nào không để thực hiện Panning
+                slot_idx = self._get_slot_index_at(x, y)
+                if slot_idx != -1:
+                    self.is_dragging = True
+                    self.use_fast_preview = True # Bật chế độ vẽ nhanh
+                    self.active_slot_index = slot_idx
+                    self.last_mouse_pos = event.pos()
+                    self.setCursor(Qt.ClosedHandCursor)
+                else:
+                    self.show_focus_box(x, y)
+                    self.clicked_pos.emit(x, y)
+                    
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.is_dragging and self.active_slot_index != -1:
+            delta = event.pos() - self.last_mouse_pos
+            
+            pix = self.pixmap()
+            # Nếu đang ở chế độ Fast Preview, ta lấy kích thước từ frame cache
+            reference_width = pix.width() if pix and not pix.isNull() else 0
+            if self.cached_frame_pixmap:
+                # Tính toán kích thước hiển thị của frame trong label (giữ tỉ lệ)
+                label_size = self.size()
+                scaled_frame = self.cached_frame_pixmap.size()
+                scaled_frame.scale(label_size, Qt.KeepAspectRatio)
+                reference_width = scaled_frame.width()
+
+            if reference_width > 0:
+                frame_w = self.layout_data.get("frame_width", 1)
+                scale = frame_w / reference_width
+                
+                dx = delta.x() * scale
+                dy = delta.y() * scale
+                
+                # Cập nhật offset cục bộ để vẽ TRỰC TIẾP (Fast Feedback)
+                if self.active_slot_index < len(self.current_slot_offsets):
+                    self.current_slot_offsets[self.active_slot_index]['x'] += dx
+                    self.current_slot_offsets[self.active_slot_index]['y'] += dy
+                
+                self.panning_signal.emit(self.active_slot_index, dx, dy)
+                self.last_mouse_pos = event.pos()
+                self.update() # Gọi paintEvent để vẽ lại ngay lập tức
+            event.accept()
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self.is_dragging:
+            self.is_dragging = False
+            self.active_slot_index = -1
+            self.setCursor(Qt.ArrowCursor)
+            self.panning_finished_signal.emit()
+        super().mouseReleaseEvent(event)
+
+    def _get_slot_index_at(self, x, y):
+        """Xác định index của slot tại tọa độ (x, y) trên label, tính đến letterboxing."""
+        if not self.layout_data or "slots" not in self.layout_data:
+            return -1
+            
+        pix = self.pixmap()
+        if not pix or pix.isNull(): return -1
+        
+        # 1. Tính toán vùng bao quanh ảnh thực tế (Content Rect)
+        # QLabel với AlignCenter sẽ vẽ pixmap ở giữa
+        w, h = self.width(), self.height()
+        pw, ph = pix.width(), pix.height()
+        
+        offset_x = (w - pw) // 2
+        offset_y = (h - ph) // 2
+        
+        # Kiểm tra xem click có nằm trong vùng ảnh không
+        if not (offset_x <= x <= offset_x + pw and offset_y <= y <= offset_y + ph):
+            return -1
+            
+        # 2. Chuyển đổi sang tọa độ tương đối bên trong ảnh
+        ix = x - offset_x
+        iy = y - offset_y
+        
+        # 3. Tính toán tỷ lệ phần trăm dựa trên nội dung ảnh
+        click_x_pct = (ix / pw) * 100.0
+        click_y_pct = (iy / ph) * 100.0
+        # print(f"[DEBUG] Click point in %: {click_x_pct:.1f}, {click_y_pct:.1f}")
+        
+        for i, slot in enumerate(self.layout_data["slots"]):
+            pts = slot["points"]
+            # Tính bounding box của slot dạng %
+            xs = [pts[k]["x_percent"] for k in pts]
+            ys = [pts[k]["y_percent"] for k in pts]
+            
+            if min(xs) <= click_x_pct <= max(xs) and min(ys) <= click_y_pct <= max(ys):
+                return i
+        return -1
 
     def show_focus_box(self, x, y):
         box_size = 80
@@ -340,6 +467,7 @@ class ImagePreviewLabel(QLabel):
         if not image_path or not os.path.exists(image_path):
             self.clear_image()
             return
+        self.use_fast_preview = False # Tắt vẽ nhanh khi đã có ảnh xử lý chất lượng cao
         self.pixmap_img = QPixmap(image_path)
         self.update_preview()
 
@@ -349,11 +477,14 @@ class ImagePreviewLabel(QLabel):
 
     def clear_image(self):
         self.pixmap_img = None
+        self.cached_slot_pixmaps = {}
+        self.cached_frame_pixmap = None
         self.clear()
         self.setText("Chưa có ảnh📸")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        self._recalculate_geometry()
         self.update_preview()
 
     def update_preview(self):
@@ -362,47 +493,132 @@ class ImagePreviewLabel(QLabel):
             super().setPixmap(scaled)
             
     def paintEvent(self, event):
-        super().paintEvent(event)
-        if self.focus_rect:
+        # Nếu đang kéo HOẶC chưa có ảnh xử lý sẵn, dùng Fast Preview
+        if self.use_fast_preview and self.cached_frame_pixmap and self.layout_data:
             painter = QPainter(self)
+            
+            # Tối ưu: Dùng FastTransformation khi đang kéo để đạt FPS cao nhất
+            if self.is_dragging:
+                painter.setRenderHint(QPainter.SmoothPixmapTransform, False)
+            else:
+                painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            
             painter.setRenderHint(QPainter.Antialiasing)
-            pen = QPen(QColor(255, 215, 0))
-            pen.setWidth(3)
-            pen.setStyle(Qt.DashLine)
-            painter.setPen(pen)
-            painter.drawRect(self.focus_rect)
+            
+            # 1. Sử dụng Geometry đã tính toán sẵn
+            target_rect = self._target_rect
+            scale = self._draw_scale
+            ox, oy = self._ox, self._oy
+            fw, fh = self.cached_frame_pixmap.width(), self.cached_frame_pixmap.height()
+            
+            # 2. Vẽ các Slot (Ảnh bên dưới)
+            for i, slot in enumerate(self.layout_data.get("slots", [])):
+                slot_pix = self.cached_slot_pixmaps.get(i)
+                if not slot_pix: continue
+                
+                # Lấy tọa độ slot trên frame (pixel)
+                pts = slot["points"]
+                sx = min(p["x_percent"] for p in pts.values()) * fw / 100
+                sy = min(p["y_percent"] for p in pts.values()) * fh / 100
+                sw = (max(p["x_percent"] for p in pts.values()) - min(p["x_percent"] for p in pts.values())) * fw / 100
+                sh = (max(p["y_percent"] for p in pts.values()) - min(p["y_percent"] for p in pts.values())) * fh / 100
+                
+                # Scale slot coordinate to label coordinate
+                lsx = ox + int(sx * scale)
+                lsy = oy + int(sy * scale)
+                lsw = int(sw * scale)
+                lsh = int(sh * scale)
+                
+                # Tính toán vùng crop của ảnh slot (bao gồm offset)
+                # Tỉ lệ ảnh slot vs vùng slot trên frame
+                img_w, img_h = slot_pix.width(), slot_pix.height()
+                
+                # Tỉ lệ khung hình slot
+                slot_aspect = sw / sh
+                img_aspect = img_w / img_h
+                
+                if img_aspect > slot_aspect: 
+                    crop_h = img_h
+                    crop_w = img_h * slot_aspect
+                else:
+                    crop_w = img_w
+                    crop_h = img_w / slot_aspect
+                
+                # Tâm ảnh mặc định + slot_offset
+                offset = self.current_slot_offsets[i] if i < len(self.current_slot_offsets) else {'x': 0, 'y': 0}
+                
+                # NÂNG CẤP: Tính toán tỷ lệ giữa ảnh cached (đã bị thu nhỏ) và kích thước slot trên frame
+                # để áp dụng offset chính xác 1:1 theo hệ tọa độ frame.
+                if img_aspect > slot_aspect:
+                    scale_f2p = img_h / sh # Ảnh khớp theo chiều cao
+                else:
+                    scale_f2p = img_w / sw # Ảnh khớp theo chiều rộng
+
+                left = (img_w - crop_w) / 2 - (offset['x'] * scale_f2p)
+                top = (img_h - crop_h) / 2 - (offset['y'] * scale_f2p)
+                
+                # Clamp crop area
+                left = max(0, min(left, img_w - crop_w))
+                top = max(0, min(top, img_h - crop_h))
+                
+                # Vẽ slot image
+                painter.drawPixmap(QRect(lsx, lsy, lsw, lsh), slot_pix, QRect(int(left), int(top), int(crop_w), int(crop_h)))
+                
+            # 3. Vẽ Frame đè lên
+            painter.drawPixmap(target_rect, self.cached_frame_pixmap)
+            
+            # 4. Vẽ Focus Rect (vẫn giữ logic cũ)
+            if self.focus_rect:
+                pen = QPen(QColor(255, 215, 0))
+                pen.setWidth(3)
+                pen.setStyle(Qt.DashLine)
+                painter.setPen(pen)
+                painter.drawRect(self.focus_rect)
+                
             painter.end()
+        else:
+            # Chế độ cũ (Dùng pixmap() của QLabel)
+            super().paintEvent(event)
+            if self.focus_rect:
+                painter = QPainter(self)
+                painter.setRenderHint(QPainter.Antialiasing)
+                pen = QPen(QColor(255, 215, 0))
+                pen.setWidth(3)
+                pen.setStyle(Qt.DashLine)
+                painter.setPen(pen)
+                painter.drawRect(self.focus_rect)
+                painter.end()
+    
+    def set_fast_preview_data(self, slot_pixmaps, frame_pixmap, slot_offsets):
+        """Cập nhật dữ liệu cache để vẽ preview nhanh."""
+        self.cached_slot_pixmaps = slot_pixmaps
+        self.cached_frame_pixmap = frame_pixmap
+        # Deep copy offsets để tránh tham chiếu chéo gây lỗi render khi dragging
+        self.current_slot_offsets = [off.copy() for off in slot_offsets]
+        self._recalculate_geometry()
+        self.update()
+
+    def _recalculate_geometry(self):
+        """Tính toán sẵn các thông số hình học để paintEvent chạy nhanh hơn."""
+        if not self.cached_frame_pixmap: return
+        
+        label_w, label_h = self.width(), self.height()
+        fw, fh = self.cached_frame_pixmap.width(), self.cached_frame_pixmap.height()
+        
+        if fw == 0 or fh == 0: return
+
+        self._draw_scale = min(label_w / fw, label_h / fh)
+        draw_w = int(fw * self._draw_scale)
+        draw_h = int(fh * self._draw_scale)
+        self._ox = (label_w - draw_w) // 2
+        self._oy = (label_h - draw_h) // 2
+        self._target_rect = QRect(self._ox, self._oy, draw_w, draw_h)
 
     def deselect_all_icons(self, exclude=None):
         for icon in self.findChildren(IconWidget):
             if icon != exclude:
                 icon.set_selected(False)
 
-    def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            # Chỉ deselect nếu click vào vùng trống của label (không trúng icon nào)
-            # childAt trả về widget con sâu nhất tại vị trí đó
-            child = self.childAt(event.pos())
-            is_icon_click = False
-            if child:
-                # Kiểm tra xem child có phải là IconWidget hoặc con của IconWidget không
-                parent = child
-                while parent:
-                    if isinstance(parent, IconWidget):
-                        is_icon_click = True
-                        break
-                    parent = parent.parent()
-            
-            if not is_icon_click:
-                self.deselect_all_icons()
-            
-            if self.interactive:
-                x = event.x()
-                y = event.y()
-                self.show_focus_box(x, y)
-                self.clicked_pos.emit(x, y)
-                
-        super().mousePressEvent(event)
 
     def clear_all_icons(self):
         for icon in self.findChildren(IconWidget):
@@ -1001,7 +1217,7 @@ class PhotoboothUI(QMainWindow):
         self.btn_capture = QPushButton("📸 CHỤP ẢNH")
         self.btn_capture.setStyleSheet(STYLE_PRIMARY_BTN)
         self.btn_capture.setCursor(Qt.PointingHandCursor)
-        self.btn_capture.setFixedHeight(100)
+        self.btn_capture.setFixedHeight(75) # Giảm height theo yêu cầu
         vbox_cap.addWidget(self.btn_capture)
         
         vbox_cap.addSpacing(10)
@@ -1102,8 +1318,44 @@ class PhotoboothUI(QMainWindow):
         gp_layout = QVBoxLayout(self.gallery_preview_container)
         gp_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.gallery_preview_label = ImagePreviewLabel("Chưa chọn ảnh📸", interactive=False)
+        self.gallery_preview_label = ImagePreviewLabel("Chưa chọn ảnh📸", interactive=True)
         gp_layout.addWidget(self.gallery_preview_label)
+        
+        # --- EXPORT BUTTONS (Added to Preview Label Overlay) ---
+        self.btn_print = QPushButton("🖨 In Ảnh")
+        self.btn_print.setFixedSize(145, 55)
+        self.btn_print.setCursor(Qt.PointingHandCursor)
+        self.btn_print.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLOR_PEACH};
+                color: white;
+                font-weight: bold;
+                font-size: 16px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 40%);
+            }}
+            QPushButton:hover {{ background-color: {COLOR_PEACH_HOVER}; }}
+        """)
+        
+        self.btn_save = QPushButton("💾 Lưu Mới")
+        self.btn_save.setFixedSize(120, 55)
+        self.btn_save.setCursor(Qt.PointingHandCursor)
+        self.btn_save.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {COLOR_PEACH};
+                color: white;
+                font-weight: bold;
+                font-size: 15px;
+                border-radius: 10px;
+                border: 1px solid rgba(255, 255, 255, 40%);
+            }}
+            QPushButton:hover {{ background-color: {COLOR_PEACH_HOVER}; }}
+        """)
+        
+        # Thêm vào layout sẵn có của ImagePreviewLabel (bottom_layout ở góc dưới bên phải)
+        self.gallery_preview_label.bottom_layout.addWidget(self.btn_save)
+        self.gallery_preview_label.bottom_layout.addWidget(self.btn_print)
+        
         preview_vbox.addWidget(self.gallery_preview_container, stretch=1)
         
         # Slot delete buttons are now handled by overlay in ImagePreviewLabel
@@ -1125,12 +1377,14 @@ class PhotoboothUI(QMainWindow):
         preview_vbox.addWidget(self.frame_list)
         
         # BOTTOM TOOLBAR
-        toolbar_container = QFrame()
-        toolbar_container.setStyleSheet(f"background: white; border: 1px solid {COLOR_BORDER}; border-radius: 12px; padding: 10px;")
-        toolbar = QHBoxLayout(toolbar_container)
+        self.processing_toolbar = QFrame()
+        self.processing_toolbar.setStyleSheet(f"background: white; border: 1px solid {COLOR_BORDER}; border-radius: 12px; padding: 10px;")
+        toolbar = QHBoxLayout(self.processing_toolbar)
         
         # Group 1: Color (LUT)
-        vbox_lut = QVBoxLayout()
+        self.lut_container = QWidget()
+        vbox_lut = QVBoxLayout(self.lut_container)
+        vbox_lut.setContentsMargins(0, 0, 0, 0)
         lbl_lut = QLabel("MÀU SẮC (LUT)")
         lbl_lut.setStyleSheet("font-weight: bold; font-size: 18px; color: #444;")
         vbox_lut.addWidget(lbl_lut)
@@ -1154,12 +1408,14 @@ class PhotoboothUI(QMainWindow):
         self.btn_delete_lut.setStyleSheet("color: #757575; border: none; font-size: 20px;")
         row_lut.addWidget(self.btn_delete_lut)
         vbox_lut.addLayout(row_lut)
-        toolbar.addLayout(vbox_lut)
+        toolbar.addWidget(self.lut_container)
         
         toolbar.addSpacing(20)
         
         # Group 2: Sharpen
-        vbox_sharp = QVBoxLayout()
+        self.sharp_container = QWidget()
+        vbox_sharp = QVBoxLayout(self.sharp_container)
+        vbox_sharp.setContentsMargins(0, 0, 0, 0)
         lbl_sharp = QLabel("ĐỘ NÉT")
         lbl_sharp.setStyleSheet("font-weight: bold; font-size: 18px; color: #444;")
         vbox_sharp.addWidget(lbl_sharp)
@@ -1171,25 +1427,18 @@ class PhotoboothUI(QMainWindow):
         self.btn_apply_sharpen.setStyleSheet(STYLE_SECONDARY_BTN + "padding: 5px 15px; font-size: 18px;")
         row_sharp.addWidget(self.btn_apply_sharpen)
         vbox_sharp.addLayout(row_sharp)
-        toolbar.addLayout(vbox_sharp)
+        toolbar.addWidget(self.sharp_container)
         
         toolbar.addSpacing(20)
         
         toolbar.addStretch()
         
-        # Group 4: Export (Important)
-        self.btn_print = QPushButton("🖨 IN ẢNH")
-        self.btn_print.setStyleSheet(STYLE_PRIMARY_BTN + "font-size: 24px; padding: 10px 30px;")
-        toolbar.addWidget(self.btn_print)
-        
-        self.btn_save = QPushButton("💾 Lưu Mới")
-        self.btn_save.setStyleSheet(STYLE_SECONDARY_BTN + "padding: 10px 20px;")
-        toolbar.addWidget(self.btn_save)
+        # self.btn_print và self.btn_save đã di chuyển vào export_overlay
         
         self.btn_add_icon = QPushButton("🎨 Thêm Icon")
-        self.btn_add_icon.setEnabled(False) # Chỉ bật khi có khung
+        self.btn_add_icon.setEnabled(False) 
         self.btn_add_icon.setStyleSheet(STYLE_SECONDARY_BTN + "padding: 10px 20px; color: #E91E63; border-color: #E91E63;")
-        toolbar.addWidget(self.btn_add_icon)
+        toolbar.addWidget(self.btn_add_icon) 
         
         toolbar.addSpacing(20)
         
@@ -1203,7 +1452,7 @@ class PhotoboothUI(QMainWindow):
         self.btn_save.setCursor(Qt.PointingHandCursor)
         self.btn_add_icon.setCursor(Qt.PointingHandCursor)
         
-        preview_vbox.addWidget(toolbar_container)
+        preview_vbox.addWidget(self.processing_toolbar)
         main_area.addLayout(preview_vbox, stretch=5) # Sử dụng số nguyên (5:2 thay vì 3:1.2)
         
         # RIGHT: Gallery Sidebar (nới rộng ra để đủ 2 cột)
@@ -1257,9 +1506,12 @@ class PhotoboothUI(QMainWindow):
         sidebar_vbox.addLayout(gallery_header_grid)
         
         self.btn_gallery_capture = QPushButton("📸 CHỤP ẢNH (C1)")
-        self.btn_gallery_capture.setStyleSheet(STYLE_PRIMARY_BTN + "font-size: 20px; height: 60px; margin-top: 5px;")
+        self.btn_gallery_capture.setStyleSheet(STYLE_PRIMARY_BTN + "font-size: 20px; margin-top: 5px;")
         self.btn_gallery_capture.setCursor(Qt.PointingHandCursor)
+        self.btn_gallery_capture.setFixedHeight(55) # Tăng height thêm 1 xíu theo yêu cầu
         sidebar_vbox.addWidget(self.btn_gallery_capture)
+
+        # PHẦN EXPORT hiện ở khung preview
         
         self.thumbnail_list = QListWidget()
         # Cho phép chọn nhiều ảnh
@@ -1338,6 +1590,23 @@ class PhotoboothUI(QMainWindow):
             self.timer_container.show()
             self.btn_add_icon.show() 
             self.logo_label.setText("🍑 PHOTOBOOTH STATION")
+
+    def set_admin_mode(self, enabled):
+        """Ẩn/Hiện các tính năng nâng cao dựa trên chế độ Admin"""
+        # Session tools
+        self.btn_session_rename.setVisible(enabled)
+        self.btn_session_delete.setVisible(enabled)
+        self.btn_copy_session_path.setVisible(enabled)
+        
+        # Image processing blocks
+        self.processing_toolbar.setVisible(enabled)
+        
+        # Gallery Admin tools
+        self.btn_delete_selected.setVisible(enabled)
+        self.btn_delete_all.setVisible(enabled)
+        
+        # Ẩn nút "Xem Log" nếu không phải admin? (Tùy chọn, ở đây tạm ẩn luôn cho sạch)
+        self.btn_show_log.setVisible(enabled)
 
     def log(self, message):
         # Lưu vào buffer và print ra console

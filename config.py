@@ -15,14 +15,16 @@ FRAME_PATH = os.path.join(ASSETS_DIR, "frame.png")
 # Persistent Settings
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 APP_MODE = "wedding" # Default: wedding, normal
+ADMIN_MODE = True    # Default: True
 
 def load_config():
-    global APP_MODE, NC_ENABLED, NC_URL, NC_USER, NC_PASS, NC_REMOTE_PATH, NC_SHARE_URL
+    global APP_MODE, ADMIN_MODE, NC_ENABLED, NC_URL, NC_USER, NC_PASS, NC_REMOTE_PATH, NC_SHARE_URL
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 APP_MODE = data.get("app_mode", "normal")
+                ADMIN_MODE = data.get("admin_mode", True)
                 NC_ENABLED = data.get("nc_enabled", False)
                 NC_URL = data.get("nc_url", NC_URL)
                 NC_USER = data.get("nc_user", NC_USER)
@@ -35,6 +37,7 @@ def save_config():
     try:
         data = {
             "app_mode": APP_MODE,
+            "admin_mode": ADMIN_MODE,
             "nc_enabled": NC_ENABLED,
             "nc_url": NC_URL,
             "nc_user": NC_USER,

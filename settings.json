@@ -1,5 +1,6 @@
 {
     "app_mode": "wedding",
+    "admin_mode": false,
     "nc_enabled": true,
     "nc_url": "https://drive.congchunghoangvanviet.com/remote.php/dav/files/photobooth/",
     "nc_user": "photobooth",

@@ -43,6 +43,7 @@ class PhotoboothApp:
         self.total_captures = 0
         self.captured_sequence_paths = []
         self.selected_slot_images = []
+        self.slot_offsets = [] # [{'x': 0, 'y': 0}, ...]
         self.current_layout = None
         self.timer = QTimer() # Timer cho countdown
         
@@ -71,6 +72,13 @@ class PhotoboothApp:
         self.refresh_gallery_data()
         self.scan_cameras()
         self.update_qr_code()
+        
+        # Panning Signals
+        self.ui.gallery_preview_label.panning_signal.connect(self.on_slot_panning)
+        self.ui.gallery_preview_label.panning_finished_signal.connect(self.on_panning_finished)
+        
+        # Init Admin Mode
+        self.ui.set_admin_mode(config.ADMIN_MODE)
         
     def _async_upload(self, local_path, subfolder, remote_name=None):
         if not config.NC_ENABLED:
@@ -249,12 +257,24 @@ class PhotoboothApp:
         act_nc.triggered.connect(self.handle_nc_config)
         menu.addAction(act_nc)
         
+        menu.addSeparator()
+        admin_toggle_text = "🔴 Tắt Admin Mode" if config.ADMIN_MODE else "🟢 Bật Admin Mode"
+        act_admin_toggle = QAction(admin_toggle_text, self.ui)
+        act_admin_toggle.triggered.connect(self.toggle_admin_mode)
+        menu.addAction(act_admin_toggle)
+        
         # Hiện menu ở góc trên cùng bên phải màn hình (hoặc cửa sổ)
         pos = self.ui.rect().topRight()
         global_pos = self.ui.mapToGlobal(pos)
         # Lùi lại một chút để không bị dính sát mép
         global_pos.setX(global_pos.x() - menu.sizeHint().width())
         menu.exec_(global_pos)
+
+    def toggle_admin_mode(self):
+        config.ADMIN_MODE = not config.ADMIN_MODE
+        config.save_config()
+        self.ui.set_admin_mode(config.ADMIN_MODE)
+        self.ui.log(f"👤 Admin Mode: {'ON' if config.ADMIN_MODE else 'OFF'}")
 
     def handle_nc_config(self):
         from ui_main import NextcloudConfigDialog
@@ -584,14 +604,53 @@ class PhotoboothApp:
 
     def refresh_gallery_preview(self):
         if not self.current_layout: return
+        self.ui.gallery_preview_label.layout_data = self.current_layout
+        
+        # Đảm bảo slot_offsets có đủ kích thước cho layout hiện tại
+        num_slots = len(self.current_layout.get("slots", []))
+        if len(self.slot_offsets) != num_slots:
+            self.slot_offsets = [{'x': 0, 'y': 0} for _ in range(num_slots)]
+
+        # NÂNG CẤP: Populate Fast Preview Cache để kéo ảnh mượt mà
+        slot_pixmaps = {}
+        for i, path in enumerate(self.selected_slot_images):
+            if path and os.path.exists(path):
+                pix = QPixmap(path)
+                # Tối ưu: Thu nhỏ ảnh tạm để việc render QPainter cực nhanh (1000px là quá đủ cho preview)
+                if pix.width() > 1000 or pix.height() > 1000:
+                    pix = pix.scaled(1000, 1000, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                slot_pixmaps[i] = pix
+        
+        frame_path = self.current_layout.get("overlay_path")
+        frame_pixmap = None
+        if frame_path and os.path.exists(frame_path):
+            frame_pixmap = QPixmap(frame_path)
+            # Tối ưu cực quan quan trọng: Thu nhỏ Frame chuẩn bị cho Panning
+            # Vẽ một cái frame 4K đè lên mỗi frame move là nguyên nhân gây lag
+            if frame_pixmap.width() > 1600:
+                frame_pixmap = frame_pixmap.scaled(1600, 1600, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        
+        self.ui.gallery_preview_label.set_fast_preview_data(slot_pixmaps, frame_pixmap, self.slot_offsets)
+
         self.ui.show_loading("Đang áp khung...")
         
         # Sử dụng QTimer để nhường main thread cho UI vẽ overlay trước khi xử lý nặng
         QTimer.singleShot(50, self._do_heavy_refresh)
 
-    def _do_heavy_refresh(self):
+    def on_slot_panning(self, slot_index, dx, dy):
+        """Cập nhật offset dữ liệu. Việc vẽ lại đã do ImagePreviewLabel tự xử lý mượt mà."""
+        if slot_index < len(self.slot_offsets):
+            self.slot_offsets[slot_index]['x'] += dx
+            self.slot_offsets[slot_index]['y'] += dy
+
+    def on_panning_finished(self):
+        """Khi user thả chuột, mới thực hiện xử lý PIL chất lượng cao để in/lưu."""
+        self._do_heavy_refresh(silent=True)
+
+    def _do_heavy_refresh(self, silent=False):
         try:
-            out_path = ImageProcessor.apply_frame(self.selected_slot_images, self.current_layout)
+            if not silent: self.ui.show_loading("Đang áp khung...")
+            out_path = ImageProcessor.apply_frame(self.selected_slot_images, self.current_layout, slot_offsets=self.slot_offsets)
             self.ui.update_preview_image(out_path)
             self.processed_image = out_path
             self.ui.update_slot_delete_buttons(self.selected_slot_images, self.on_remove_slot_image)
@@ -618,6 +677,10 @@ class PhotoboothApp:
             return
         self.current_layout = layout_data
         num_slots = len(layout_data.get("slots", []))
+        
+        # Reset hoặc resize offsets
+        self.slot_offsets = [{'x': 0, 'y': 0} for _ in range(num_slots)]
+        
         if len(self.selected_slot_images) != num_slots:
             new_list = [None] * num_slots
             for i in range(min(len(self.selected_slot_images), num_slots)): new_list[i] = self.selected_slot_images[i]
@@ -631,20 +694,25 @@ class PhotoboothApp:
             self.ui.show_loading("Đang gửi lệnh in...")
             try:
                 PrinterService.print_image(self.processed_image)
-                # Upload to Nextcloud asynchronously (Output)
-                self._async_upload(self.processed_image, self.current_session)
+                # Tên file cho Nextcloud: [Session]_[Timestamp].jpg
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                remote_name = f"{self.current_session}_{timestamp}.jpg"
+                self._async_upload(self.processed_image, self.current_session, remote_name=remote_name)
                 QMessageBox.information(self.ui, "Máy in", "Đã gửi in.")
             finally:
                 self.ui.hide_loading()
     def save_action(self):
         if self.processed_image:
-            target, _ = QFileDialog.getSaveFileName(self.ui, "Lưu ảnh", f"PRO_{os.path.basename(self.processed_image)}", "Images (*.jpg)")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_name = f"{self.current_session}_{timestamp}.jpg"
+            target, _ = QFileDialog.getSaveFileName(self.ui, "Lưu ảnh", default_name, "Images (*.jpg)")
             if target:
                 self.ui.show_loading("Đang lưu ảnh...")
                 try:
                     shutil.copy2(self.processed_image, target)
-                    # Upload to Nextcloud asynchronously (Output)
-                    self._async_upload(self.processed_image, self.current_session)
+                    # Upload to Nextcloud asynchronously (Output) - Cùng tên với file lưu
+                    remote_name = os.path.basename(target)
+                    self._async_upload(self.processed_image, self.current_session, remote_name=remote_name)
                 finally:
                     self.ui.hide_loading()
 
