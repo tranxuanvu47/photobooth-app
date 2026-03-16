@@ -1,10 +1,9 @@
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 from pillow_lut import load_cube_file
 import os
 import cv2
 import numpy as np
 from config import OUTPUT_DIR, FRAME_PATH
-from utils.image_utils import safe_cv2_imread, safe_cv2_imwrite
 
 class ImageProcessor:
     @staticmethod
@@ -17,7 +16,7 @@ class ImageProcessor:
             if not os.path.exists(image_path):
                 return image_path
             
-            img = safe_cv2_imread(image_path)
+            img = cv2.imread(image_path)
             if img is None:
                 return image_path
 
@@ -50,7 +49,7 @@ class ImageProcessor:
                 np.copyto(sharpened, img, where=low_contrast_mask)
 
             # Ghi đè trực tiếp lên file gốc để đồng bộ luồng preview/print
-            safe_cv2_imwrite(image_path, sharpened, [int(cv2.IMWRITE_JPEG_QUALITY), 98])
+            cv2.imwrite(image_path, sharpened, [int(cv2.IMWRITE_JPEG_QUALITY), 98])
             print(f"[SHARPEN] Đã làm nét ảnh ({level}): {image_path}")
             return image_path
             
@@ -315,7 +314,7 @@ class ImageProcessor:
             if not os.path.exists(image_path):
                 return
                 
-            img = safe_cv2_imread(image_path)
+            img = cv2.imread(image_path)
             if img is None:
                 return
                 
@@ -323,18 +322,18 @@ class ImageProcessor:
             
             # Nếu mảng trả về có khác biệt kích thước thì mới ghi đè
             if cropped_img.shape != img.shape:
-                safe_cv2_imwrite(image_path, cropped_img)
+                cv2.imwrite(image_path, cropped_img)
                 print(f"[CROP] Đã tự động cắt ảnh về tỉ lệ 4:3: {image_path}")
                 
         except Exception as e:
             print(f"[CROP Lỗi] Không thể cắt ảnh về tỉ lệ 4:3: {e}")
 
     @staticmethod
-    def apply_frame(image_paths, layout_config, icons_data=None, slot_offsets=None):
+    def apply_frame(image_paths, layout_config, icons_data=None, preview_mode=False):
         """
         image_paths: List các đường dẫn ảnh (có thể có None nếu slot trống)
         layout_config: Config object chứa list 'slots'
-        slot_offsets: List các dictionary [{'x': 0, 'y': 0}, ...] chứa độ lệch bù trừ (offset) cho từng slot
+        preview_mode: Tăng tốc độ load ảnh cho giao diện bằng cách resize nhỏ lại
         """
         try:
             # 1. Load frame overlay (Background)
@@ -345,7 +344,20 @@ class ImageProcessor:
             frame_w = layout_config["frame_width"]
             frame_h = layout_config["frame_height"]
             
+            # Cấu hình Performance (Preview mode)
+            scale_factor = 1.0
+            if preview_mode:
+                # Giới hạn kích thước preview tối đa để chạy mượt
+                max_preview_dim = 1000.0
+                if max(frame_w, frame_h) > max_preview_dim:
+                    scale_factor = max_preview_dim / max(frame_w, frame_h)
+                    frame_w = int(frame_w * scale_factor)
+                    frame_h = int(frame_h * scale_factor)
+
             frame_img = Image.open(frame_path).convert("RGBA")
+            # Sửa lỗi lưu xoay khung không đúng EXIF
+            frame_img = ImageOps.exif_transpose(frame_img)
+            
             if frame_img.size != (frame_w, frame_h):
                 frame_img = frame_img.resize((frame_w, frame_h), Image.Resampling.LANCZOS)
                 
@@ -361,12 +373,6 @@ class ImageProcessor:
                 if not os.path.exists(path):
                     continue
 
-                # Lấy offset nếu có
-                offset_x, offset_y = 0, 0
-                if slot_offsets and i < len(slot_offsets):
-                    offset_x = slot_offsets[i].get('x', 0)
-                    offset_y = slot_offsets[i].get('y', 0)
-
                 points = slot["points"]
                 # Tính toán Bounding Box từ tọa độ %
                 min_x = min(points["top_left"]["x_percent"], points["bottom_left"]["x_percent"]) / 100.0 * frame_w
@@ -381,10 +387,11 @@ class ImageProcessor:
                 
                 if box_w <= 0 or box_h <= 0: continue
 
-                # Load và resize ảnh chụp
-                with Image.open(path).convert("RGBA") as base_img:
-                    img_w, img_h = base_img.size
-                    img_aspect = img_w / img_h
+                # Load và resize ảnh chụp, áp dụng EXIF transpose để fix góc xoay
+                with Image.open(path) as raw_img:
+                    base_img = ImageOps.exif_transpose(raw_img).convert("RGBA")
+                    
+                    img_aspect = base_img.width / base_img.height
                     box_aspect = box_w / box_h
                     
                     if img_aspect > box_aspect:
@@ -394,25 +401,15 @@ class ImageProcessor:
                         new_w = box_w
                         new_h = int(new_w / img_aspect)
                         
-                    resized_img = base_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    # Dùng NEAREST cho preview để tăng cực độ tốc độ render
+                    resample_filter = Image.Resampling.NEAREST if preview_mode else Image.Resampling.LANCZOS
+                    resized_img = base_img.resize((new_w, new_h), resample_filter)
                     
-                    # Tính toán vùng crop (mặc định là chính giữa) cộng thêm offset
-                    # Tọa độ left_base/top_base là vị trí trung tâm
-                    left_base = (new_w - box_w) / 2
-                    top_base = (new_h - box_h) / 2
-                    
-                    # Áp dụng offset (đảo dấu vì kéo chuột xuôi thì ảnh lùi lại)
-                    left = left_base - offset_x
-                    top = top_base - offset_y
-                    
-                    # Giới hạn (Clamp) để không bị lộ vùng trống ngoài ảnh
-                    left = max(0, min(left, new_w - box_w))
-                    top = max(0, min(top, new_h - box_h))
-                    
-                    right = left + box_w
-                    bottom = top + box_h
-                    
-                    cropped_img = resized_img.crop((int(left), int(top), int(right), int(bottom)))
+                    left = (new_w - box_w) / 2
+                    top = (new_h - box_h) / 2
+                    right = (new_w + box_w) / 2
+                    bottom = (new_h + box_h) / 2
+                    cropped_img = resized_img.crop((left, top, right, bottom))
                     
                     # Dán chồng ảnh chụp vào background
                     result.paste(cropped_img, (box_x, box_y))
@@ -441,6 +438,8 @@ class ImageProcessor:
                         rot = icon.get('rotation', 0)
                         if rot != 0:
                             icon_img = icon_img.rotate(-rot, expand=True, resample=Image.Resampling.BICUBIC)
+                            # Cân chỉnh lại tọa độ sau khi expanded (rotate expand làm thay đổi anchor)
+                            # Tuy nhiên hiện tại IconWidget chưa xoay anchor, ta tạm để mặc định
                         
                         # Dán icon
                         result.alpha_composite(icon_img, (ix, iy))
@@ -450,10 +449,19 @@ class ImageProcessor:
             # Đổi về RGB để save jpg
             rgb_im = result.convert('RGB')
             
-            # Tạo tên file output dựa trên ảnh đầu tiên
+            if preview_mode:
+                import io, base64
+                buffered = io.BytesIO()
+                rgb_im.save(buffered, format="JPEG", quality=80)
+                b64_str = base64.b64encode(buffered.getvalue()).decode()
+                return "base64:" + b64_str
+            
+            # Tạo tên lưu trữ cho file in
             first_path = next((p for p in image_paths if p), "composite.jpg")
             filename = "print_ready_" + os.path.basename(first_path)
             out_path = os.path.join(OUTPUT_DIR, filename)
+            
+            # Lưu chất lượng gốc
             rgb_im.save(out_path, format="JPEG", quality=98)
             return out_path
             

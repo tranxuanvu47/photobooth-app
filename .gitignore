@@ -41,6 +41,10 @@ send linh gay/
 *.swp
 *.swo
 
+# Large Assets
+frames/
+assets/
+
 # OS
 .DS_Store
 Thumbs.db
