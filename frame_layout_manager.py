@@ -8,6 +8,7 @@ class FrameLayoutManager:
         self.frames_dir = frames_dir
         self.config_file = os.path.join(self.config_dir, "layouts.json")
         self.layouts = []
+        self.categories = ["Classic", "Vintage", "Trendy", "Cute & Fun", "Wedding"]
         
         self.ensure_directories()
         self.load_layouts()
@@ -24,20 +25,27 @@ class FrameLayoutManager:
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.layouts = data.get("layouts", [])
+                    self.categories = data.get("categories", ["Classic", "Vintage", "Trendy", "Cute & Fun", "Wedding"])
                     
                     # Migration: Convert old 'points' structure to new 'slots' list
                     for layout in self.layouts:
                         if "points" in layout and "slots" not in layout:
                             layout["slots"] = [{"points": layout.pop("points")}]
+                        if "category" not in layout:
+                            layout["category"] = "Classic"
             except Exception as e:
                 print(f"Lỗi đọc file cấu hình: {e}")
                 self.layouts = []
+                self.categories = ["Classic", "Vintage", "Trendy", "Cute & Fun", "Wedding"]
         else:
             self.layouts = []
             self.save_layouts()
 
     def save_layouts(self):
-        data = {"layouts": self.layouts}
+        data = {
+            "categories": self.categories,
+            "layouts": self.layouts
+        }
         try:
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
@@ -46,32 +54,21 @@ class FrameLayoutManager:
             print(f"Lỗi lưu file cấu hình: {e}")
             return False
 
-    def add_layout(self, name, frame_file, width, height, slots):
+    def add_layout(self, name, frame_file, width, height, slots, category="Classic"):
         # Validate data
         if not name or not frame_file:
             return False, "Tên layout và file khung không được để trống."
             
-        if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
+        if not isinstance(width, (int, float)) or not isinstance(height, (int, float)) or width <= 0 or height <= 0:
             return False, "Kích thước khung không hợp lệ."
             
         if not slots or not isinstance(slots, list):
             return False, "Danh sách vùng ảnh (slots) không hợp lệ."
 
-        required_points = ["top_left", "top_right", "bottom_right", "bottom_left"]
-        for i, slot in enumerate(slots):
-            points = slot.get("points", {})
-            for pt in required_points:
-                if pt not in points or "x_percent" not in points[pt] or "y_percent" not in points[pt]:
-                    return False, f"Thiếu tọa độ cho {pt} ở slot {i+1}."
-                
-                x = points[pt]["x_percent"]
-                y = points[pt]["y_percent"]
-                if not (0 <= x <= 100) or not (0 <= y <= 100):
-                    return False, f"Tọa độ {pt} ở slot {i+1} phải nằm trong khoảng 0-100%."
-
         # Kiểm tra trùng tên, nếu trùng thì cập nhật (ghi đè)
         new_layout = {
             "name": name,
+            "category": category,
             "frame_file": frame_file,
             "frame_width": width,
             "frame_height": height,
@@ -113,6 +110,35 @@ class FrameLayoutManager:
             if layout["name"] == name:
                 return layout
         return None
+
+    def get_all_categories(self):
+        return self.categories
+
+    def add_category(self, name):
+        if name and name not in self.categories:
+            self.categories.append(name)
+            self.save_layouts()
+            return True
+        return False
+
+    def delete_category(self, name):
+        if name in self.categories:
+            self.categories.remove(name)
+            self.save_layouts()
+            return True
+        return False
+
+    def rename_category(self, old_name, new_name):
+        if old_name in self.categories and new_name and new_name not in self.categories:
+            idx = self.categories.index(old_name)
+            self.categories[idx] = new_name
+            # Update layouts in this category
+            for l in self.layouts:
+                if l.get("category") == old_name:
+                    l["category"] = new_name
+            self.save_layouts()
+            return True
+        return False
 
     def get_available_frames(self):
         self.ensure_directories()

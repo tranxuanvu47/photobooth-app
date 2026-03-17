@@ -86,8 +86,42 @@ class FletCameraWorker(threading.Thread):
         
     def _emit_frame(self, frame_bgr):
         if not self.on_frame: return
-        # Flet expects Base64 encoded image string for live streaming
-        _, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, config.CAMERA_QUALITY])
+        
+        # Mirroring
+        if getattr(config, 'MIRROR_MODE', True):
+            frame_bgr = cv2.flip(frame_bgr, 1)
+
+        # Optimize resolution for quality: Match screen size as much as possible
+        # Since the app uses large glass cards, we need high-res preview to avoid blur.
+        h, w = frame_bgr.shape[:2]
+        target_h = 1080 # FULL HD resolution for the preview to match UI size
+        if h > target_h:
+            scale = target_h / h
+            target_w = int(w * scale)
+            preview_frame = cv2.resize(frame_bgr, (target_w, target_h), interpolation=cv2.INTER_AREA)
+        else:
+            preview_frame = frame_bgr
+
+        # Optimize resolution: 800p provides a bit more detail than 720p while staying smooth
+        h, w = frame_bgr.shape[:2]
+        target_h = 800 
+        if h > target_h:
+            scale = target_h / h
+            target_w = int(w * scale)
+            preview_frame = cv2.resize(frame_bgr, (target_w, target_h), interpolation=cv2.INTER_AREA)
+        else:
+            preview_frame = frame_bgr
+
+        # 1. Anti-noise: Median filter to kill grain
+        preview_frame = cv2.medianBlur(preview_frame, 3)
+
+        # 2. Stronger Sharpening (approx 20% increase)
+        gaussian_blur = cv2.GaussianBlur(preview_frame, (0, 0), 1.5)
+        # Increased from 1.2/-0.2 to 1.4/-0.4
+        preview_frame = cv2.addWeighted(preview_frame, 1.4, gaussian_blur, -0.4, 0)
+
+        # Use 88 quality for a bit more crispness
+        _, buffer = cv2.imencode('.jpg', preview_frame, [cv2.IMWRITE_JPEG_QUALITY, 88])
         b64_str = base64.b64encode(buffer).decode("utf-8")
         self.on_frame(b64_str)
 
@@ -126,6 +160,12 @@ class FletCameraWorker(threading.Thread):
                 try:
                     cap = cv2.VideoCapture(i, BACKEND_FLAG)
                     if cap.isOpened():
+                        # Force MJPG for high res & high FPS compatibility
+                        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                        cap.set(cv2.CAP_PROP_FPS, 30)
+                        
                         ret, test_frame = cap.read()
                         if ret and test_frame is not None and test_frame.size > 0:
                             self.pool[idx_str] = cap
@@ -219,6 +259,11 @@ class FletCameraWorker(threading.Thread):
                     self._emit_mock_frame()
                     self.action = "idle"
                     return
+                # Force MJPG for high res & high FPS compatibility
+                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+                cap.set(cv2.CAP_PROP_FPS, 30)
                 self.pool[self.camera_index] = cap
             except Exception as e:
                 print(f"DEBUG: OpenCV Init Error: {e}")
@@ -245,17 +290,16 @@ class FletCameraWorker(threading.Thread):
                 if not ret or frame is None or getattr(frame, 'size', 0) == 0:
                     raise Exception("Failed to read frame")
                 
-                if getattr(config, 'MIRROR_MODE', True):
-                    frame = cv2.flip(frame, 1)
+                # 1. First crop to 4:3 (efficient)
+                frame = ImageProcessor.crop_array_to_4_3(frame)
 
+                # 2. Digital Zoom (if active)
                 if self.digital_zoom > 1.0:
                     h, w = frame.shape[:2]
                     new_h, new_w = int(h / self.digital_zoom), int(w / self.digital_zoom)
                     y1, x1 = (h - new_h) // 2, (w - new_w) // 2
                     y2, x2 = y1 + new_h, x1 + new_w
                     frame = frame[y1:y2, x1:x2]
-
-                frame = ImageProcessor.crop_array_to_4_3(frame)
             except Exception as e:
                 print(f"DEBUG: Camera Error (Idx {self.camera_index}): {e}")
                 self._emit_mock_frame()
@@ -281,7 +325,8 @@ class FletCameraWorker(threading.Thread):
             if not self.is_paused:
                 self._emit_frame(frame)
                 
-            time.sleep(0.015)
+            # Adaptive sleep: subtract processing time if needed, but 10ms is usually safe for ~30-60fps
+            time.sleep(0.01)
 
     def zoom_in(self):
         self.digital_zoom = min(self.digital_zoom + 0.2, 3.0)

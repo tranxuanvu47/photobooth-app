@@ -1,7 +1,15 @@
 {
+    "categories": [
+        "Classic",
+        "Vintage",
+        "Trendy",
+        "Cute & Fun",
+        "Wedding"
+    ],
     "layouts": [
         {
             "name": "vu_hao_new",
+            "category": "Wedding",
             "frame_file": "frames/vu_hao_new.png",
             "frame_width": 1446,
             "frame_height": 2170,
@@ -54,7 +62,8 @@
                         }
                     }
                 }
-            ]
+            ],
+            "category": "Classic"
         },
         {
             "name": "2image",
@@ -102,7 +111,8 @@
                         }
                     }
                 }
-            ]
+            ],
+            "category": "Classic"
         },
         {
             "name": "svsscsc",
@@ -130,7 +140,8 @@
                         }
                     }
                 }
-            ]
+            ],
+            "category": "Classic"
         },
         {
             "name": "test2",
@@ -178,35 +189,8 @@
                         }
                     }
                 }
-            ]
-        },
-        {
-            "name": "test xéo",
-            "frame_file": "frames/Thiết kế chưa có tên.png",
-            "frame_width": 1144,
-            "frame_height": 1728,
-            "slots": [
-                {
-                    "points": {
-                        "top_left": {
-                            "x_percent": 3.48,
-                            "y_percent": 8.41
-                        },
-                        "top_right": {
-                            "x_percent": 87.98,
-                            "y_percent": 0.58
-                        },
-                        "bottom_right": {
-                            "x_percent": 94.77,
-                            "y_percent": 33.76
-                        },
-                        "bottom_left": {
-                            "x_percent": 11.5,
-                            "y_percent": 42.05
-                        }
-                    }
-                }
-            ]
+            ],
+            "category": "Classic"
         },
         {
             "name": "layout_3",
@@ -234,7 +218,8 @@
                         }
                     }
                 }
-            ]
+            ],
+            "category": "Classic"
         },
         {
             "name": "test 3",
@@ -259,6 +244,85 @@
                         "bottom_left": {
                             "x_percent": 5.35,
                             "y_percent": 56.11
+                        }
+                    }
+                }
+            ],
+            "category": "Classic"
+        },
+        {
+            "name": "testttt nè",
+            "category": "Classic",
+            "frame_file": "frames/frame-8-march.png",
+            "frame_width": 4630,
+            "frame_height": 6514,
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 12.52,
+                            "y_percent": 8.72
+                        },
+                        "top_right": {
+                            "x_percent": 88.27,
+                            "y_percent": 8.72
+                        },
+                        "bottom_right": {
+                            "x_percent": 88.27,
+                            "y_percent": 43.25
+                        },
+                        "bottom_left": {
+                            "x_percent": 12.52,
+                            "y_percent": 43.25
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "layout 2",
+            "category": "Classic",
+            "frame_file": "frames/Thiết kế chưa có tên.png",
+            "frame_width": 1144,
+            "frame_height": 1728,
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 6.92,
+                            "y_percent": 4.6
+                        },
+                        "top_right": {
+                            "x_percent": 92.51,
+                            "y_percent": 4.6
+                        },
+                        "bottom_right": {
+                            "x_percent": 92.51,
+                            "y_percent": 38.56
+                        },
+                        "bottom_left": {
+                            "x_percent": 6.92,
+                            "y_percent": 38.56
+                        }
+                    }
+                },
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 10.04,
+                            "y_percent": 44.37
+                        },
+                        "top_right": {
+                            "x_percent": 95.63,
+                            "y_percent": 44.37
+                        },
+                        "bottom_right": {
+                            "x_percent": 95.63,
+                            "y_percent": 78.89
+                        },
+                        "bottom_left": {
+                            "x_percent": 10.04,
+                            "y_percent": 78.89
                         }
                     }
                 }
