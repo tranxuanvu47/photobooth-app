@@ -19,6 +19,7 @@ import sys
 import subprocess
 import traceback
 from PIL import Image as PILImage
+import httpx
 
 # Premium Aesthetic Palette
 COLOR_TEAL_DARK = "#004D40"      # Font chữ đậm
@@ -111,6 +112,9 @@ class FletPhotoboothApp:
         self.remaining_captures = 0
         self.total_captures = 1
         self.is_capturing = False
+        self.payment_completed = False
+        self.payment_timestamp = 0
+        self.current_order_id = None
         
         # Gallery State
         self.selected_slot_images = []
@@ -179,7 +183,7 @@ class FletPhotoboothApp:
         )
         
         # Sidebar Controls
-        self.qr_code_img = ft.Image(width=160, height=160, fit=ft.ImageFit.CONTAIN) # Even smaller QR
+        self.qr_code_img = ft.Image(src_base64="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", width=160, height=160, fit=ft.ImageFit.CONTAIN) # Even smaller QR
         self.session_dropdown = ft.Dropdown(
             label="Chọn hoặc nhập tên...", expand=True, border_radius=10,
             text_size=12,
@@ -240,7 +244,7 @@ class FletPhotoboothApp:
             padding=10,
             child_aspect_ratio=1.33 # Keep 4:3 Landscape Ratio
         )
-        self.gallery_preview = ft.Image(fit=ft.ImageFit.CONTAIN) # Target: Center and Fit
+        self.gallery_preview = ft.Image(src_base64="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", fit=ft.ImageFit.CONTAIN) # Target: Center and Fit
         self.frame_selector_grid = ft.Row(
             spacing=15,
             scroll=ft.ScrollMode.ALWAYS,
@@ -410,6 +414,11 @@ class FletPhotoboothApp:
 
     # --- Feature: Capture Sequence ---
     def on_capture_click(self, e):
+        # ── Payment Check ──
+        if config.PAYMENT_ENABLED and not self.is_session_active():
+            self.show_payment_dialog()
+            return
+
         # Route to Capture One flow if mode is active
         if config.CAPTURE_ONE_MODE:
             self.on_capture_one_click()
@@ -431,6 +440,123 @@ class FletPhotoboothApp:
         self.is_capturing = True
         
         self.trigger_next_shot()
+
+    def is_session_active(self):
+        if not config.PAYMENT_ENABLED: return True
+        if not self.payment_completed: return False
+        # Session valid for 5 mins (300 seconds)
+        if time.time() - self.payment_timestamp > 300:
+            self.payment_completed = False
+            return False
+        return True
+
+    def show_payment_dialog(self):
+        qr_img = ft.Image(src_base64="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", width=300, height=300, fit="contain")
+        order_id_text = ft.Text("", selectable=True, weight="bold", size=16, color="blue")
+        status_text = ft.Text("ĐANG KHỞI TẠO THANH TOÁN...", weight="bold", color=COLOR_TEAL_DARK)
+        progress = ft.ProgressBar(width=300, color=COLOR_PEACH_PRIMARY)
+        
+        def close_dialog(_):
+            self.page.close(self.active_dialog)
+            self.stop_polling = True
+
+        self.active_dialog = ft.AlertDialog(
+            title=ft.Text("💳 THANH TOÁN ĐỂ CHỤP ẢNH", weight="bold", text_align="center"),
+            content=ft.Container(
+                width=400,
+                content=ft.Column([
+                    ft.Text(f"Số tiền: {config.PAYMENT_AMOUNT:,} VNĐ", size=20, weight="bold", color=COLOR_PEACH_PRIMARY),
+                    ft.Container(qr_img, alignment=ft.alignment.center, padding=10),
+                    ft.Row([ft.Text("Mã đơn hàng: ", size=12), order_id_text], alignment="center"),
+                    status_text,
+                    progress,
+                    ft.Text("Vui lòng quét mã QR để thanh toán. Hệ thống sẽ tự động bắt đầu khi nhận được tiền.", 
+                            size=12, color=COLOR_TEXT_MUTED, text_align="center"),
+                ], horizontal_alignment="center", tight=True)
+            ),
+            actions=[
+                ft.TextButton("Hủy", on_click=close_dialog)
+            ],
+            modal=True
+        )
+        self.page.open(self.active_dialog)
+        self.safe_update()
+
+        # Logic gọi Server
+        self.stop_polling = False
+        def payment_thread():
+            try:
+                # 1. Create order
+                res = httpx.post(f"{config.PAYMENT_URL}/payments/create", json={
+                    "package_id": config.PAYMENT_PACKAGE_ID,
+                    "amount": config.PAYMENT_AMOUNT,
+                    "description": f"Chụp ảnh Photobooth - {self.current_session}"
+                }, timeout=10)
+                
+                if res.status_code == 200:
+                    data = res.json()
+                    self.current_order_id = data["order_id"]
+                    order_id_text.value = self.current_order_id
+                    
+                    # Tạo QR code từ chuỗi trả về
+                    # Mock server trả về string "PAYMENT://...", ta cần tạo image
+                    import qrcode
+                    qr = qrcode.QRCode(box_size=10, border=1)
+                    qr.add_data(data["qr_code"])
+                    qr.make(fit=True)
+                    qr_pil = qr.make_image(fill_color="black", back_color="white")
+                    
+                    buff = BytesIO()
+                    qr_pil.save(buff, format="PNG")
+                    qr_img.src_base64 = base64.b64encode(buff.getvalue()).decode()
+                    status_text.value = "⏳ ĐANG CHỜ THANH TOÁN..."
+                    self.safe_update()
+
+                    # 2. Polling
+                    start_time = time.time()
+                    while not self.stop_polling and (time.time() - start_time < 300): # 5 mins timeout
+                        poll_res = httpx.get(f"{config.PAYMENT_URL}/payments/{self.current_order_id}/status")
+                        if poll_res.status_code == 200:
+                            p_data = poll_res.json()
+                            if p_data["status"] == "paid":
+                                status_text.value = "✅ THANH TOÁN THÀNH CÔNG!"
+                                status_text.color = "green"
+                                progress.visible = False
+                                self.safe_update()
+                                
+                                # Call photobooth/start to confirm
+                                httpx.post(f"{config.PAYMENT_URL}/photobooth/start", json={"order_id": self.current_order_id})
+                                
+                                time.sleep(1.5)
+                                self.payment_completed = True
+                                self.payment_timestamp = time.time() # Store session start
+                                self.page.close(self.active_dialog)
+                                # Hide start overlay if present
+                                self.start_overlay.visible = False
+                                # START CAPTURE AFTER PAID
+                                self.on_capture_click(None)
+                                break
+                            elif p_data["status"] in ["failed", "expired"]:
+                                status_text.value = f"❌ THẤT BẠI: {p_data['status'].upper()}"
+                                status_text.color = "red"
+                                progress.visible = False
+                                self.safe_update()
+                                break
+                        
+                        time.sleep(2)
+                else:
+                    status_text.value = "❌ LỖI KẾT NỐI SERVER"
+                    status_text.color = "red"
+                    progress.visible = False
+                    self.safe_update()
+            except Exception as ex:
+                print(f"Payment Error: {ex}")
+                status_text.value = f"❌ LỖI: {str(ex)[:30]}"
+                status_text.color = "red"
+                progress.visible = False
+                self.safe_update()
+
+        threading.Thread(target=payment_thread, daemon=True).start()
 
     def _activate_window_fast(self, hwnd):
         """Force-focus a window by HWND using win32 API — much faster than pygetwindow.activate()."""
@@ -640,6 +766,7 @@ class FletPhotoboothApp:
 
     def finish_sequence(self):
         self.is_capturing = False
+        # Do not reset payment here to allow "Back" and retry within 5 mins
         self.btn_capture.text = "📸 CHỤP ẢNH"
         self.capture_progress_overlay.visible = False
         self.camera_worker.resume_preview()
@@ -794,6 +921,9 @@ class FletPhotoboothApp:
         if out_path:
             self.page.snack_bar = ft.SnackBar(ft.Text("Đang gửi lệnh in... 🖨️", color="white")); self.page.snack_bar.open=True; self.safe_update()
             PrinterService.print_image(out_path)
+            # Reset payment session after printing
+            self.payment_completed = False
+            self.payment_timestamp = 0
 
     def handle_save(self, _):
         out_path = self.processed_image
@@ -808,6 +938,9 @@ class FletPhotoboothApp:
         if out_path:
             self.page.snack_bar = ft.SnackBar(ft.Text(f"✅ Đã lưu file chất lượng cao: {os.path.basename(out_path)}"), bgcolor="green")
             self.page.snack_bar.open=True
+            # Reset payment session after saving
+            self.payment_completed = False
+            self.payment_timestamp = 0
             self.safe_update()
 
     def refresh_thumbnails(self):
@@ -993,6 +1126,30 @@ class FletPhotoboothApp:
         # --- NEW: Two-Card Split System for Home (Matching Gallery) ---
 
         # Camera preview container with forced 3:2 aspect ratio (no black bars)
+        self.start_overlay = ft.Container(
+            bgcolor="rgba(0,0,0,0.7)",
+            padding=40,
+            border_radius=15,
+            alignment=ft.alignment.center,
+            visible=not self.is_session_active(),
+            content=ft.Column([
+                ft.Text("BẮT ĐẦU TRẢI NGHIỆM", size=32, weight="bold", color="white", text_align="center"),
+                ft.Text(f"Nhấn vào nút bên dưới để thanh toán ({config.PAYMENT_AMOUNT:,} VNĐ)", color="white70", size=14),
+                ft.Container(height=20),
+                ft.ElevatedButton(
+                    content=ft.Row([
+                        ft.Text("BẮT ĐẦU NGAY", size=20, weight="bold"), 
+                        ft.Icon(ft.Icons.ARROW_FORWARD_ROUNDED)
+                    ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                    bgcolor=COLOR_PEACH_PRIMARY,
+                    color="white",
+                    height=70, width=300,
+                    on_click=self.on_capture_click,
+                    style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=15))
+                )
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, tight=True)
+        )
+
         main_view = ft.Container(
             expand=True, 
             bgcolor="black", 
@@ -1002,7 +1159,8 @@ class FletPhotoboothApp:
                 # Stack fills the container; COVER mode ensures no black bars
                 self.camera_view,
                 ft.Container(self.countdown_overlay, alignment=ft.alignment.center),
-                self.capture_progress_overlay
+                self.capture_progress_overlay,
+                self.start_overlay # Always on top until hidden
             ])
         )
         
@@ -1548,7 +1706,7 @@ class FletPhotoboothApp:
 
             # --- Architecture: Layered Stack ---
             # Layer 0: Background Image
-            preview_img = ft.Image(fit=ft.ImageFit.FILL)
+            preview_img = ft.Image(src_base64="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7", fit=ft.ImageFit.FILL)
             # Layer 1: Existing Slots
             slots_layer = ft.Stack(expand=True)
             # Layer 2: Ghost selection rectangle
@@ -1983,6 +2141,12 @@ class FletPhotoboothApp:
             expand=True
         )
 
+        # Payment Settings
+        payment_enabled_toggle = ft.Switch(label="Kích hoạt Mock Payment", value=config.PAYMENT_ENABLED)
+        payment_url_field = ft.TextField(label="Server URL", value=config.PAYMENT_URL, hint_text="http://localhost:8000")
+        payment_package_field = ft.TextField(label="Package ID", value=config.PAYMENT_PACKAGE_ID)
+        payment_amount_field = ft.TextField(label="Số tiền (VNĐ)", value=str(config.PAYMENT_AMOUNT), input_filter=ft.NumbersOnlyInputFilter())
+
         def save_and_exit(_):
             config.NC_ENABLED = nc_enabled.value
             config.NC_URL = nc_url.value; config.NC_USER = nc_user.value; config.NC_PASS = nc_pass.value
@@ -1992,6 +2156,13 @@ class FletPhotoboothApp:
             config.CAMERA_QUALITY = int(quality_dropdown.value)
             config.CAPTURE_ONE_MODE = c1_toggle.value
             config.CAPTURE_ONE_WINDOW_TITLE = c1_window_title.value.strip() or "Capture One,CaptureOne"
+            config.PAYMENT_ENABLED = payment_enabled_toggle.value
+            config.PAYMENT_URL = payment_url_field.value.strip()
+            config.PAYMENT_PACKAGE_ID = payment_package_field.value.strip()
+            try:
+                config.PAYMENT_AMOUNT = int(payment_amount_field.value)
+            except:
+                pass
             config.save_config(); self.update_qr_code(); self._update_capture_btn_label(); self.page.go("/")
 
         def test_nc(_):
@@ -2078,6 +2249,28 @@ class FletPhotoboothApp:
                                         ft.Divider(height=20),
                                         ft.Container(sessions_list, expand=True)
                                     ], spacing=10, expand=True)
+                                )
+                            ),
+                            ft.Tab(
+                                text="THANH TOÁN",
+                                icon=ft.Icons.PAYMENT_ROUNDED,
+                                content=ft.Container(
+                                    padding=30,
+                                    content=ft.Column([
+                                        ft.Text("Cấu Hình Thanh Toán (Mock Server)", size=22, weight="bold", color=COLOR_TEAL_DARK),
+                                        ft.Divider(),
+                                        ft.Container(
+                                            padding=20, border_radius=15, bgcolor="white",
+                                            content=ft.Column([
+                                                payment_enabled_toggle,
+                                                ft.Text("Khi bật, chỉ khi thanh toán thành công mới bắt đầu chụp được.", size=12, italic=True),
+                                                ft.Divider(),
+                                                payment_url_field,
+                                                payment_package_field,
+                                                payment_amount_field,
+                                            ], spacing=15)
+                                        )
+                                    ], spacing=10, scroll=ft.ScrollMode.AUTO)
                                 )
                             ),
                             ft.Tab(

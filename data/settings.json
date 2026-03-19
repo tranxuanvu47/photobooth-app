@@ -8,7 +8,11 @@
     "nc_share_url": "https://drive.congchunghoangvanviet.com/s/5dHkHrEDdnK9zPH",
     "mirror_mode": true,
     "camera_quality": 90,
-    "admin_password_enabled": true,
-    "capture_one_mode": true,
-    "capture_one_window_title": "Capture One,CaptureOne"
+    "admin_password_enabled": false,
+    "capture_one_mode": false,
+    "capture_one_window_title": "Capture One,CaptureOne",
+    "payment_enabled": true,
+    "payment_url": "http://localhost:8000",
+    "payment_package_id": "pkg_photobooth",
+    "payment_amount": 1000
 }

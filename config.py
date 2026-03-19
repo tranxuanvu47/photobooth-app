@@ -24,9 +24,14 @@ FRAMES_DIR = os.path.join(PROJECT_DIR, "frames")
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 APP_MODE = "wedding" # Default: wedding, normal
 ADMIN_PASSWORD_ENABLED = True
+PAYMENT_ENABLED = False # Mặc định tắt để ko ảnh hưởng flow cũ trừ khi bật
+PAYMENT_URL = "http://localhost:8000"
+PAYMENT_PACKAGE_ID = "pkg_photobooth"
+PAYMENT_AMOUNT = 50000
 
 def load_config():
     global APP_MODE, NC_ENABLED, NC_URL, NC_USER, NC_PASS, NC_REMOTE_PATH, NC_SHARE_URL, CAPTURE_ONE_MODE, CAPTURE_ONE_WINDOW_TITLE
+    global PAYMENT_ENABLED, PAYMENT_URL, PAYMENT_PACKAGE_ID, PAYMENT_AMOUNT
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
@@ -43,6 +48,10 @@ def load_config():
                 ADMIN_PASSWORD_ENABLED = data.get("admin_password_enabled", True)
                 CAPTURE_ONE_MODE = data.get("capture_one_mode", False)
                 CAPTURE_ONE_WINDOW_TITLE = data.get("capture_one_window_title", "Capture One,CaptureOne")
+                PAYMENT_ENABLED = data.get("payment_enabled", False)
+                PAYMENT_URL = data.get("payment_url", "http://localhost:8000")
+                PAYMENT_PACKAGE_ID = data.get("payment_package_id", "pkg_photobooth")
+                PAYMENT_AMOUNT = data.get("payment_amount", 50000)
         except: pass
 
 def save_config():
@@ -59,7 +68,11 @@ def save_config():
             "camera_quality": CAMERA_QUALITY,
             "admin_password_enabled": ADMIN_PASSWORD_ENABLED,
             "capture_one_mode": CAPTURE_ONE_MODE,
-            "capture_one_window_title": CAPTURE_ONE_WINDOW_TITLE
+            "capture_one_window_title": CAPTURE_ONE_WINDOW_TITLE,
+            "payment_enabled": PAYMENT_ENABLED,
+            "payment_url": PAYMENT_URL,
+            "payment_package_id": PAYMENT_PACKAGE_ID,
+            "payment_amount": PAYMENT_AMOUNT
         }
         with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
