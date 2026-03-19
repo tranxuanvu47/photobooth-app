@@ -1,0 +1,40 @@
+# Sticker Assets
+
+This directory contains SVG sticker assets for the photo booth.
+
+## Adding Stickers
+
+1. Add SVG files to this directory
+2. Update the STICKERS array in `src/app/shared/models/sticker.model.ts`
+3. Reference the file path as `assets/stickers/your-sticker.svg`
+
+## Recommended Sticker Sizes
+
+- Small icons: 80x80 to 100x100
+- Medium decorations: 120x120 to 150x150
+- Large overlays: 200x200+
+
+## File Formats
+
+- Use SVG format for best scalability
+- PNG with transparency also supported
+- Keep file sizes under 50KB for performance
+
+## Creating Stickers
+
+You can create custom stickers using:
+- Adobe Illustrator
+- Inkscape (free)
+- Figma
+- Online SVG editors
+
+Or download free SVG assets from:
+- https://www.flaticon.com/
+- https://thenounproject.com/
+- https://www.svgrepo.com/
+
+## Placeholder Stickers
+
+For development, simple SVG placeholders are included in the code.
+Replace these with actual wedding-themed graphics for production.
+

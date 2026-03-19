@@ -1,0 +1,312 @@
+.camera-capture {
+  padding: var(--spacing-lg);
+  background: var(--surface-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.camera-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-lg);
+}
+
+.camera-title {
+  font-size: 1.25rem;
+  color: var(--text-primary);
+}
+
+.camera-controls {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.camera-error {
+  text-align: center;
+  padding: var(--spacing-xxl);
+  color: var(--error-color);
+
+  svg {
+    margin-bottom: var(--spacing-lg);
+  }
+
+  p {
+    max-width: 400px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+}
+
+.camera-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.video-container {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+
+  video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: transparent;
+  }
+}
+
+.countdown-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.countdown-circle {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: var(--primary-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.countdown-number {
+  font-size: 3rem;
+  font-weight: 700;
+  color: white;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+.camera-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.countdown-selector {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+
+  label {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+}
+
+.countdown-select {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--surface-color);
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+}
+
+.capture-btn {
+  min-width: 150px;
+}
+
+.device-selector {
+  position: relative;
+}
+
+.device-dropdown {
+  position: absolute;
+  bottom: calc(100% + var(--spacing-sm));
+  right: 0;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-sm);
+  min-width: 200px;
+  z-index: 100;
+}
+
+.device-option {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-align: left;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  transition: background var(--transition-fast);
+
+  &:hover {
+    background: var(--background-color);
+  }
+
+  &.active {
+    background: var(--primary-color);
+    color: white;
+  }
+}
+
+.photo-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+
+  img {
+    width: 100%;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+  }
+}
+
+.preview-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+  .camera-header {
+    flex-direction: column;
+    gap: var(--spacing-md);
+    align-items: stretch;
+  }
+
+  .camera-controls {
+    width: 100%;
+    
+    button, label {
+      flex: 1;
+    }
+  }
+
+  // Portrait specific adjustments if needed
+  @media (orientation: portrait) {
+    .camera-actions {
+      flex-direction: column;
+      
+      .countdown-selector {
+        width: 100%;
+        justify-content: center;
+      }
+
+      button {
+        width: 100%;
+      }
+    }
+  }
+}
+
+// Mobile Landscape Styles
+@media (max-width: 900px) and (orientation: landscape) {
+  .camera-view {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-md);
+    height: 100%;
+  }
+
+  .video-container {
+    flex: 1;
+    height: auto;
+    max-height: 80vh;
+    aspect-ratio: 4/3 !important; // Enforce 4:3 on mobile landscape
+    width: auto;
+  }
+
+  .camera-actions {
+    flex-direction: column;
+    width: auto;
+    min-width: 120px;
+    justify-content: center;
+    gap: var(--spacing-md);
+  }
+
+  .capture-btn {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    min-width: unset;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    
+    span {
+      display: none; // Hide text
+    }
+    
+    svg {
+      width: 32px;
+      height: 32px;
+    }
+  }
+}
+
+// Global mobile tweaks
+.is-mobile {
+  .video-container {
+    aspect-ratio: 4/3;
+  }
+}
+
+.rotate-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 9999;
+  display: none; // Hidden by default
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  text-align: center;
+  padding: var(--spacing-xl);
+
+  svg {
+    margin-bottom: var(--spacing-lg);
+    animation: rotate-phone 2s infinite ease-in-out;
+  }
+
+  h3 {
+    font-size: 1.5rem;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  p {
+    color: var(--text-secondary);
+  }
+}
+
+// Show overlay only on mobile portrait
+@media (max-width: 900px) and (orientation: portrait) {
+  .is-mobile .rotate-overlay {
+    display: flex;
+  }
+}
+
+@keyframes rotate-phone {
+  0%, 10% { transform: rotate(0deg); }
+  40%, 60% { transform: rotate(90deg); }
+  90%, 100% { transform: rotate(90deg); }
+}
+
