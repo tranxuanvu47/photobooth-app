@@ -26,7 +26,7 @@ APP_MODE = "wedding" # Default: wedding, normal
 ADMIN_PASSWORD_ENABLED = True
 
 def load_config():
-    global APP_MODE, NC_ENABLED, NC_URL, NC_USER, NC_PASS, NC_REMOTE_PATH, NC_SHARE_URL, CAPTURE_ONE_MODE
+    global APP_MODE, NC_ENABLED, NC_URL, NC_USER, NC_PASS, NC_REMOTE_PATH, NC_SHARE_URL, CAPTURE_ONE_MODE, CAPTURE_ONE_WINDOW_TITLE
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
@@ -42,6 +42,7 @@ def load_config():
                 CAMERA_QUALITY = data.get("camera_quality", 90)
                 ADMIN_PASSWORD_ENABLED = data.get("admin_password_enabled", True)
                 CAPTURE_ONE_MODE = data.get("capture_one_mode", False)
+                CAPTURE_ONE_WINDOW_TITLE = data.get("capture_one_window_title", "Capture One,CaptureOne")
         except: pass
 
 def save_config():
@@ -57,7 +58,8 @@ def save_config():
             "mirror_mode": MIRROR_MODE,
             "camera_quality": CAMERA_QUALITY,
             "admin_password_enabled": ADMIN_PASSWORD_ENABLED,
-            "capture_one_mode": CAPTURE_ONE_MODE
+            "capture_one_mode": CAPTURE_ONE_MODE,
+            "capture_one_window_title": CAPTURE_ONE_WINDOW_TITLE
         }
         with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
@@ -78,5 +80,6 @@ NC_SHARE_URL = "https://drive.congchunghoangvanviet.com/s/5dHkHrEDdnK9zPH" # Lin
 MIRROR_MODE = True
 CAMERA_QUALITY = 90
 CAPTURE_ONE_MODE = False
+CAPTURE_ONE_WINDOW_TITLE = "Capture One,CaptureOne"
 
 load_config()

@@ -318,14 +318,33 @@ class FrameConfigDialog(QDialog):
         else:
             self.on_slot_count_changed(0)
 
+    def _find_path_index(self, path):
+        if not path: return -1
+        # Chuẩn hóa path để so sánh (không phân biệt hoa thường và loại gạch chéo)
+        norm_target = os.path.normpath(path).lower()
+        for i in range(self.frame_combo.count()):
+            data = self.frame_combo.itemData(i)
+            if data and os.path.normpath(str(data)).lower() == norm_target:
+                return i
+        return -1
+
     def refresh_frames(self, select_path=None):
+        self.frame_combo.blockSignals(True)
         self.frame_combo.clear()
         frames = self.layout_manager.get_available_frames()
         for f in frames:
             self.frame_combo.addItem(os.path.basename(f), userData=f)
-        if select_path:
-            idx = self.frame_combo.findData(select_path)
-            if idx >= 0: self.frame_combo.setCurrentIndex(idx)
+        
+        target_path = select_path
+        idx = self._find_path_index(target_path)
+        
+        if idx >= 0:
+            self.frame_combo.setCurrentIndex(idx)
+        else:
+            self.frame_combo.setCurrentIndex(0)
+            
+        self.frame_combo.blockSignals(False)
+        self.on_frame_changed() # Cập nhật preview thủ công
 
     def on_frame_changed(self, index=0):
         path = self.frame_combo.currentData()
@@ -459,8 +478,12 @@ class FrameConfigDialog(QDialog):
         self.name_input.setStyleSheet("background-color: #eee;")
         
         path = data.get("frame_file", "")
-        idx = self.frame_combo.findData(path)
-        if idx >= 0: self.frame_combo.setCurrentIndex(idx)
+        idx = self._find_path_index(path)
+        if idx >= 0: 
+            self.frame_combo.blockSignals(True)
+            self.frame_combo.setCurrentIndex(idx)
+            self.frame_combo.blockSignals(False)
+            self.on_frame_changed()
         
         self.width_input.setValue(data.get("frame_width", 1800))
         self.height_input.setValue(data.get("frame_height", 1200))

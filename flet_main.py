@@ -82,12 +82,26 @@ class FletPhotoboothApp:
         self.page = page
         self.page.title = "Photobooth Station Pro - Flet Edition"
         self.page.bgcolor = "white"
+        self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
-        self.page.window.height = 1000
+        self.page.horizontal_alignment = ft.CrossAxisAlignment.START
+        self.page.vertical_alignment = ft.MainAxisAlignment.START
+        
+        # --- Window Configuration ---
+        # Explicitly set dimensions and position to avoid layout race conditions on startup
         self.page.window.width = 1600
+        self.page.window.height = 1000
+        self.page.window.min_width = 1200
+        self.page.window.min_height = 800
         self.page.window.resizable = True
         self.page.window.maximized = False
+        self.page.window.center()
+        self.page.window.to_front()
         self.page.update()
+        
+        # Give the OS a moment to apply window sizing before we start building the UI
+        time.sleep(0.3) # Increased slightly for better reliability on slower systems
+        self.page.update() 
         
         # --- Application State ---
         self.current_session = "vows_08_march"
@@ -128,7 +142,10 @@ class FletPhotoboothApp:
         # Monitor Thread
         threading.Thread(target=self.monitor_raw_dir, daemon=True).start()
         
+        # Final startup sequence: Wait, Go, Force Update
+        time.sleep(0.1)
         self.page.go("/")
+        self.page.update()
         
         # Current Tab State
         self.active_tab = "Classic"
@@ -141,10 +158,8 @@ class FletPhotoboothApp:
         # Placeholder 1x1 transparent gif to avoid red error box
         self.camera_view = ft.Image(
             src_base64="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
-            fit=ft.ImageFit.COVER,  # COVER: fills the area, crops sides if needed (no black bars)
+            fit=ft.ImageFit.COVER,
             expand=True,
-            width=float("inf"),
-            height=float("inf"),
             gapless_playback=True
         )
         self.countdown_overlay = ft.Container(
@@ -433,6 +448,8 @@ class FletPhotoboothApp:
 
     def _find_capture_one_window(self):
         """Find the Capture One window by searching all open windows. Returns (hwnd, title)."""
+        # Build keyword list from config (comma-separated)
+        keywords = [kw.strip() for kw in config.CAPTURE_ONE_WINDOW_TITLE.split(",") if kw.strip()]
         try:
             import win32gui
             result = []
@@ -440,7 +457,7 @@ class FletPhotoboothApp:
                 if not win32gui.IsWindowVisible(hwnd):
                     return
                 title = win32gui.GetWindowText(hwnd)
-                if "Capture One" in title or "CaptureOne" in title:
+                if any(kw in title for kw in keywords):
                     result.append((hwnd, title))
             win32gui.EnumWindows(enum_cb, None)
             if result:
@@ -1440,7 +1457,7 @@ class FletPhotoboothApp:
                         ])
                     )
                 )
-            self.safe_update()
+            # self.safe_update() - Removed to prevent black screen during initial view construction
 
         def delete_layout_confirm(name):
             def do_del(_):
@@ -1497,10 +1514,27 @@ class FletPhotoboothApp:
             )
             
             frames = self.layout_manager.get_available_frames()
+            
+            # Resolve relative frame_file from DB to absolute path for matching in the dropdown
+            current_frame = editor_state["frame_file"]
+            matched_frame = None
+            if current_frame:
+                # Try absolute match first
+                abs_frame = os.path.abspath(current_frame).replace("\\", "/")
+                if abs_frame in frames:
+                    matched_frame = abs_frame
+                else:
+                    # Try matching by filename (basename)
+                    base_name = os.path.basename(current_frame)
+                    for f in frames:
+                        if os.path.basename(f) == base_name:
+                            matched_frame = f
+                            break
+            
             frame_dropdown = ft.Dropdown(
                 label="File Khung",
                 options=[ft.dropdown.Option(f, text=os.path.basename(f)) for f in frames],
-                value=editor_state["frame_file"] if editor_state["frame_file"] in frames else (frames[0] if frames else None),
+                value=matched_frame if matched_frame in frames else (frames[0] if frames else None),
                 expand=True
             )
             self.active_layout_dialog_dropdown = frame_dropdown
@@ -1880,7 +1914,7 @@ class FletPhotoboothApp:
                         ft.IconButton(ft.Icons.DELETE_OUTLINE, icon_color="red", on_click=lambda e, name=c: delete_cat(name))
                     ])
                 )
-            self.safe_update()
+            # self.safe_update() - Removed to prevent black screen during initial view construction
 
         def on_rename_cat(old_name):
             def do_rename(e):
@@ -1935,6 +1969,13 @@ class FletPhotoboothApp:
             value=config.CAPTURE_ONE_MODE,
             active_color=COLOR_TEAL_BORDER
         )
+        c1_window_title = ft.TextField(
+            label="Tên cửa sổ cần tìm (cách nhau bằng dấu phẩy)",
+            value=config.CAPTURE_ONE_WINDOW_TITLE,
+            hint_text="VD: Capture One,CaptureOne,PhotoBooth",
+            border_color=COLOR_TEAL_BORDER,
+            prefix_icon=ft.Icons.SEARCH_ROUNDED
+        )
         quality_dropdown = ft.Dropdown(
             label="Chất lượng ảnh Preview",
             value=str(config.CAMERA_QUALITY),
@@ -1950,6 +1991,7 @@ class FletPhotoboothApp:
             config.ADMIN_PASSWORD_ENABLED = not password_toggle.value
             config.CAMERA_QUALITY = int(quality_dropdown.value)
             config.CAPTURE_ONE_MODE = c1_toggle.value
+            config.CAPTURE_ONE_WINDOW_TITLE = c1_window_title.value.strip() or "Capture One,CaptureOne"
             config.save_config(); self.update_qr_code(); self._update_capture_btn_label(); self.page.go("/")
 
         def test_nc(_):
@@ -2102,6 +2144,7 @@ class FletPhotoboothApp:
                                             padding=ft.padding.symmetric(horizontal=16, vertical=10),
                                             border=ft.border.all(1.5, COLOR_TEAL_BORDER)
                                         ),
+                                        c1_window_title,
                                         ft.Text(
                                             "Khi bật: nút 'Chụp ảnh' sẽ đổi thành 'Chụp C1'. Nhấn sẽ mở Capture One, gửi phím Ctrl+K và tự động chuyển về màn hình Thư viện.",
                                             size=11, color=COLOR_TEXT_MUTED, italic=True
