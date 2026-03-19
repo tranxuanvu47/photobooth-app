@@ -1,0 +1,14 @@
+{
+    "app_mode": "wedding",
+    "nc_enabled": true,
+    "nc_url": "https://drive.congchunghoangvanviet.com/remote.php/dav/files/photobooth/",
+    "nc_user": "photobooth",
+    "nc_pass": "7daTr-r7zyy-zY6cB-Zeopx-g73kQ",
+    "nc_remote_path": "Photobooth",
+    "nc_share_url": "https://drive.congchunghoangvanviet.com/s/5dHkHrEDdnK9zPH",
+    "mirror_mode": true,
+    "camera_quality": 90,
+    "admin_password_enabled": true,
+    "capture_one_mode": true,
+    "capture_one_window_title": "Capture One,CaptureOne"
+}

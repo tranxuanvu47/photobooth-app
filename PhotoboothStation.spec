@@ -2,11 +2,11 @@
 
 
 a = Analysis(
-    ['main.py'],
+    ['flet_main.py'],
     pathex=[],
     binaries=[],
-    datas=[('config.py', '.'), ('camera_controller.py', '.'), ('image_processor.py', '.'), ('printer_service.py', '.'), ('ui_main.py', '.')],
-    hiddenimports=['PyQt5', 'cv2', 'numpy', 'PIL', 'win32print', 'win32ui', 'win32gui'],
+    datas=[],
+    hiddenimports=['flet', 'cv2', 'numpy', 'PIL'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -35,5 +35,4 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='NONE',
 )
