@@ -80,6 +80,6 @@ NC_SHARE_URL = "https://drive.congchunghoangvanviet.com/s/5dHkHrEDdnK9zPH" # Lin
 MIRROR_MODE = True
 CAMERA_QUALITY = 90
 CAPTURE_ONE_MODE = False
-CAPTURE_ONE_WINDOW_TITLE = "Capture One,CaptureOne"
+CAPTURE_ONE_WINDOW_TITLE = "Capture One,CaptureOne,PhotoBooth"
 
 load_config()
