@@ -13,8 +13,9 @@ git commit -m "Update Admin settings: Print control, Auto-Return toggle, and Gal
 echo --- Setting remote URL with authentication ---
 git remote set-url origin %REMOTE_URL%
 
-echo --- Pushing current branch (%LOCAL_BRANCH%) to remote branch (%REMOTE_BRANCH%) ---
-git push origin %LOCAL_BRANCH%:%REMOTE_BRANCH%
+echo --- FORCE Pushing current branch (%LOCAL_BRANCH%) to remote branch (%REMOTE_BRANCH%) ---
+echo WARNING: This will overwrite any changes on the remote branch '%REMOTE_BRANCH%'!
+git push origin %LOCAL_BRANCH%:%REMOTE_BRANCH% --force
 
 echo --- Done ---
 pause
