@@ -10,27 +10,27 @@
         {
             "name": "April4",
             "category": "Classic",
-            "frame_file": "d:/photobooth-app/frames/2.png",
-            "frame_width": 4419,
-            "frame_height": 6250,
+            "frame_file": "C:/Users/nguye/photobooth-app-1/frames/5-t4.png",
+            "frame_width": 425,
+            "frame_height": 283,
             "slots": [
                 {
                     "points": {
                         "top_left": {
-                            "x_percent": 9.67,
-                            "y_percent": 7.5
+                            "x_percent": 4.05,
+                            "y_percent": 20.27
                         },
                         "top_right": {
-                            "x_percent": 90.69,
-                            "y_percent": 7.5
+                            "x_percent": 59.65,
+                            "y_percent": 20.27
                         },
                         "bottom_right": {
-                            "x_percent": 90.69,
-                            "y_percent": 44.03
+                            "x_percent": 59.65,
+                            "y_percent": 83.2
                         },
                         "bottom_left": {
-                            "x_percent": 9.67,
-                            "y_percent": 44.03
+                            "x_percent": 4.05,
+                            "y_percent": 83.2
                         }
                     }
                 }
@@ -39,27 +39,27 @@
         {
             "name": "April5",
             "category": "Classic",
-            "frame_file": "d:/photobooth-app/frames/3.png",
-            "frame_width": 4419,
-            "frame_height": 6250,
+            "frame_file": "C:/Users/nguye/photobooth-app-1/frames/5-t4.png",
+            "frame_width": 425,
+            "frame_height": 283,
             "slots": [
                 {
                     "points": {
                         "top_left": {
-                            "x_percent": 9.49,
-                            "y_percent": 7.13
+                            "x_percent": 3.85,
+                            "y_percent": 20.42
                         },
                         "top_right": {
-                            "x_percent": 91.04,
-                            "y_percent": 7.13
+                            "x_percent": 59.25,
+                            "y_percent": 20.42
                         },
                         "bottom_right": {
-                            "x_percent": 91.04,
-                            "y_percent": 44.03
+                            "x_percent": 59.25,
+                            "y_percent": 82.9
                         },
                         "bottom_left": {
-                            "x_percent": 9.49,
-                            "y_percent": 44.03
+                            "x_percent": 3.85,
+                            "y_percent": 82.9
                         }
                     }
                 }
@@ -68,27 +68,27 @@
         {
             "name": "LayoutNgang",
             "category": "Classic",
-            "frame_file": "d:/photobooth-app/frames/Happy Wedding.png",
-            "frame_width": 6250,
-            "frame_height": 4419,
+            "frame_file": "C:/Users/nguye/photobooth-app-1/frames/5-t4.png",
+            "frame_width": 425,
+            "frame_height": 283,
             "slots": [
                 {
                     "points": {
                         "top_left": {
-                            "x_percent": 7.11,
-                            "y_percent": 21.01
+                            "x_percent": 4.05,
+                            "y_percent": 20.87
                         },
                         "top_right": {
-                            "x_percent": 61.85,
-                            "y_percent": 21.01
+                            "x_percent": 59.15,
+                            "y_percent": 20.87
                         },
                         "bottom_right": {
-                            "x_percent": 61.85,
-                            "y_percent": 79.42
+                            "x_percent": 59.15,
+                            "y_percent": 82.3
                         },
                         "bottom_left": {
-                            "x_percent": 7.11,
-                            "y_percent": 79.42
+                            "x_percent": 4.05,
+                            "y_percent": 82.3
                         }
                     }
                 }
@@ -97,9 +97,9 @@
         {
             "name": "April 4 Ngang",
             "category": "Classic",
-            "frame_file": "d:/photobooth-app/frames/4t4 (2).png",
-            "frame_width": 8192,
-            "frame_height": 5455,
+            "frame_file": "C:/Users/nguye/photobooth-app-1/frames/5-t4.png",
+            "frame_width": 425,
+            "frame_height": 283,
             "slots": [
                 {
                     "points": {

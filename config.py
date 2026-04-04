@@ -24,9 +24,11 @@ FRAMES_DIR = os.path.join(PROJECT_DIR, "frames")
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 APP_MODE = "wedding" # Default: wedding, normal
 ADMIN_PASSWORD_ENABLED = False
+PRINT_ENABLED = True
+AUTO_RETURN_HOME = True
 
 def load_config():
-    global APP_MODE, NC_ENABLED, NC_URL, NC_USER, NC_PASS, NC_REMOTE_PATH, NC_SHARE_URL, CAPTURE_ONE_MODE, CAPTURE_ONE_WINDOW_TITLE
+    global APP_MODE, NC_ENABLED, NC_URL, NC_USER, NC_PASS, NC_REMOTE_PATH, NC_SHARE_URL, CAPTURE_ONE_MODE, CAPTURE_ONE_WINDOW_TITLE, PRINT_ENABLED, AUTO_RETURN_HOME
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
@@ -43,6 +45,8 @@ def load_config():
                 ADMIN_PASSWORD_ENABLED = data.get("admin_password_enabled", False)
                 CAPTURE_ONE_MODE = data.get("capture_one_mode", False)
                 CAPTURE_ONE_WINDOW_TITLE = data.get("capture_one_window_title", "Capture One,CaptureOne")
+                PRINT_ENABLED = data.get("print_enabled", True)
+                AUTO_RETURN_HOME = data.get("auto_return_home", True)
         except: pass
 
 def save_config():
@@ -59,7 +63,9 @@ def save_config():
             "camera_quality": CAMERA_QUALITY,
             "admin_password_enabled": ADMIN_PASSWORD_ENABLED,
             "capture_one_mode": CAPTURE_ONE_MODE,
-            "capture_one_window_title": CAPTURE_ONE_WINDOW_TITLE
+            "capture_one_window_title": CAPTURE_ONE_WINDOW_TITLE,
+            "print_enabled": PRINT_ENABLED,
+            "auto_return_home": AUTO_RETURN_HOME
         }
         with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
@@ -81,5 +87,7 @@ MIRROR_MODE = True
 CAMERA_QUALITY = 90
 CAPTURE_ONE_MODE = False
 CAPTURE_ONE_WINDOW_TITLE = "Capture One,CaptureOne"
+PRINT_ENABLED = True
+AUTO_RETURN_HOME = True
 
 load_config()

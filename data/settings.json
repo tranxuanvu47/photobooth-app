@@ -10,5 +10,7 @@
     "camera_quality": 90,
     "admin_password_enabled": false,
     "capture_one_mode": true,
-    "capture_one_window_title": "Capture One,CaptureOne,Test2,CaptureOne2"
+    "capture_one_window_title": "Capture One,CaptureOne,Test2,CaptureOne2",
+    "print_enabled": true,
+    "auto_return_home": false
 }

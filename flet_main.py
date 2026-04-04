@@ -831,6 +831,12 @@ class FletPhotoboothApp:
 
     def handle_print(self, _):
         """In trực tiếp đến máy in mặc định, không hiện dialog."""
+        if not config.PRINT_ENABLED:
+            self.page.snack_bar = ft.SnackBar(ft.Text("❌ Chức năng in đang bị khóa trong Admin."), bgcolor="red")
+            self.page.snack_bar.open = True
+            self.safe_update()
+            return
+
         # ── Chuẩn bị ảnh đầu ra ─────────────────────────────────────────────
         out_path = self.processed_image
         if not out_path and self.current_layout:
@@ -878,27 +884,33 @@ class FletPhotoboothApp:
                 # 3. In ảnh
                 PrinterService.print_image(final_path)
 
-                # 4. Hiện dialog thành công với nút OK → về màn hình chụp
-                def _go_home(_=None):
+                # 4. Hiện dialog thành công với nút OK → về màn hình chụp (nếu bật Auto Return)
+                def _on_success_done(_=None):
                     try:
                         self.page.close(self.active_dialog)
                     except:
                         pass
                     
-                    self.selected_slot_images = []
-                    self.processed_image = None
+                    if config.AUTO_RETURN_HOME:
+                        self.selected_slot_images = []
+                        self.processed_image = None
 
-                    # Khởi tạo một task trễ một chút để Flet đóng dialog sạch sẽ trước khi đổi Route, tránh lỗi màn hình đen (mất reference camera_view)
-                    import time
-                    def _nav():
-                        time.sleep(0.1)
-                        self.page.go("/")
+                        # Khởi tạo một task trễ một chút để Flet đóng dialog sạch sẽ trước khi đổi Route, tránh lỗi màn hình đen (mất reference camera_view)
+                        import time
+                        def _nav():
+                            time.sleep(0.1)
+                            self.page.go("/")
+                            self.safe_update()
+                            if hasattr(self, 'camera_worker'):
+                                self.camera_worker.resume_preview()
+
+                        import threading
+                        threading.Thread(target=_nav, daemon=True).start()
+                    else:
+                        # Ở lại gallery, chỉ thông báo
+                        self.page.snack_bar = ft.SnackBar(ft.Text("✅ Đã in xong. Bạn đang ở chế độ không tự động quay về."), bgcolor="green")
+                        self.page.snack_bar.open = True
                         self.safe_update()
-                        if hasattr(self, 'camera_worker'):
-                            self.camera_worker.resume_preview()
-
-                    import threading
-                    threading.Thread(target=_nav, daemon=True).start()
 
                 success_dialog = ft.AlertDialog(
                     modal=True,
@@ -916,7 +928,7 @@ class FletPhotoboothApp:
                     actions=[
                         ft.ElevatedButton(
                             "OK  →",
-                            on_click=_go_home,
+                            on_click=_on_success_done,
                             bgcolor=COLOR_PEACH_PRIMARY,
                             color="white",
                             style=ft.ButtonStyle(
@@ -967,10 +979,14 @@ class FletPhotoboothApp:
                 self.page.snack_bar = ft.SnackBar(ft.Text(f"✅ Đã lưu file thành công và đang tải lên đám mây..."), bgcolor="green")
                 self.page.snack_bar.open=True
                 
-                # Clear selection & Go back Home
-                self.selected_slot_images = []
-                self.processed_image = None
-                self.page.go("/")
+                # Clear selection & Go back Home (if enabled)
+                if config.AUTO_RETURN_HOME:
+                    self.selected_slot_images = []
+                    self.processed_image = None
+                    self.page.go("/")
+                else:
+                    self.page.snack_bar = ft.SnackBar(ft.Text("✅ Đã lưu. Bạn đang ở chế độ không tự động quay về."), bgcolor="green")
+                    self.page.snack_bar.open = True
                 self.safe_update()
             except Exception as e:
                 self.page.snack_bar = ft.SnackBar(ft.Text(f"Lỗi copy file: {e}"), bgcolor="red")
@@ -1004,8 +1020,8 @@ class FletPhotoboothApp:
         path = os.path.join(config.RAW_DIR, self.current_session)
         if os.path.exists(path):
             all_files = [f for f in os.listdir(path) if f.lower().endswith(('.jpg', '.png'))]
-            # Giới hạn 50 ảnh mới nhất để tránh ngốn RAM
-            files = sorted(all_files, key=lambda x: os.path.getmtime(os.path.join(path, x)), reverse=True)[:50]
+            # Giới hạn 5 ảnh mới nhất để tránh ngốn RAM
+            files = sorted(all_files, key=lambda x: os.path.getmtime(os.path.join(path, x)), reverse=True)[:5]
             for f in files:
                 fpath = os.path.join(path, f)
                 # Dùng thumbnail nhỏ thay vì full-res để tiết kiệm RAM
@@ -2156,6 +2172,11 @@ class FletPhotoboothApp:
 
         mirror_toggle = ft.Switch(label="Chế độ Mirror (Phản chiếu)", value=config.MIRROR_MODE)
         password_toggle = ft.Switch(label="Nút khởi động nhanh Admin (Ctrl+7 không mật khẩu)", value=not config.ADMIN_PASSWORD_ENABLED)
+        
+        # New Toggles for Print and Flow
+        print_toggle = ft.Switch(label="Cho phép In ảnh (Direct Print)", value=config.PRINT_ENABLED)
+        return_home_toggle = ft.Switch(label="Tự động quay về màn hình chính khi Lưu", value=config.AUTO_RETURN_HOME)
+
         c1_toggle = ft.Switch(
             label="📷 Chế độ Capture One (Chụp C1)",
             value=config.CAPTURE_ONE_MODE,
@@ -2184,6 +2205,11 @@ class FletPhotoboothApp:
             config.CAMERA_QUALITY = int(quality_dropdown.value)
             config.CAPTURE_ONE_MODE = c1_toggle.value
             config.CAPTURE_ONE_WINDOW_TITLE = c1_window_title.value.strip() or "Capture One,CaptureOne"
+            
+            # Save new toggles
+            config.PRINT_ENABLED = print_toggle.value
+            config.AUTO_RETURN_HOME = return_home_toggle.value
+
             config.save_config(); self.update_qr_code(); self._update_capture_btn_label(); self.page.go("/")
 
         def test_nc(_):
@@ -2323,6 +2349,10 @@ class FletPhotoboothApp:
                                         ft.Text("CĂN CHỈNH CAMERA", weight="bold"),
                                         zoom_controls,
                                         ft.Container(focus_btn, alignment=ft.alignment.center),
+                                        ft.Divider(),
+                                        ft.Text("QUY TRÌNH CHỤP & LƯU", weight="bold"),
+                                        print_toggle,
+                                        return_home_toggle,
                                         ft.Divider(),
                                         password_toggle,
                                         mirror_toggle,
