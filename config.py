@@ -23,7 +23,7 @@ FRAMES_DIR = os.path.join(PROJECT_DIR, "frames")
 # Persistent Settings
 SETTINGS_FILE = os.path.join(BASE_DIR, "settings.json")
 APP_MODE = "wedding" # Default: wedding, normal
-ADMIN_PASSWORD_ENABLED = True
+ADMIN_PASSWORD_ENABLED = False
 
 def load_config():
     global APP_MODE, NC_ENABLED, NC_URL, NC_USER, NC_PASS, NC_REMOTE_PATH, NC_SHARE_URL, CAPTURE_ONE_MODE, CAPTURE_ONE_WINDOW_TITLE
@@ -40,7 +40,7 @@ def load_config():
                 NC_SHARE_URL = data.get("nc_share_url", "")
                 MIRROR_MODE = data.get("mirror_mode", True)
                 CAMERA_QUALITY = data.get("camera_quality", 90)
-                ADMIN_PASSWORD_ENABLED = data.get("admin_password_enabled", True)
+                ADMIN_PASSWORD_ENABLED = data.get("admin_password_enabled", False)
                 CAPTURE_ONE_MODE = data.get("capture_one_mode", False)
                 CAPTURE_ONE_WINDOW_TITLE = data.get("capture_one_window_title", "Capture One,CaptureOne")
         except: pass

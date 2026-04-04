@@ -8,111 +8,120 @@
     ],
     "layouts": [
         {
-            "name": "vu_hao_new",
-            "category": "Wedding",
-            "frame_file": "frames/vu_hao_new.png",
-            "frame_width": 1446,
-            "frame_height": 2170,
+            "name": "April4",
+            "category": "Classic",
+            "frame_file": "d:/photobooth-app/frames/2.png",
+            "frame_width": 4419,
+            "frame_height": 6250,
             "slots": [
                 {
                     "points": {
                         "top_left": {
-                            "x_percent": 9.27,
-                            "y_percent": 11.29
+                            "x_percent": 9.67,
+                            "y_percent": 7.5
                         },
                         "top_right": {
-                            "x_percent": 91.29,
-                            "y_percent": 11.66
+                            "x_percent": 90.69,
+                            "y_percent": 7.5
                         },
                         "bottom_right": {
-                            "x_percent": 91.29,
-                            "y_percent": 52.4
+                            "x_percent": 90.69,
+                            "y_percent": 44.03
                         },
                         "bottom_left": {
-                            "x_percent": 9.27,
-                            "y_percent": 52.4
+                            "x_percent": 9.67,
+                            "y_percent": 44.03
                         }
                     }
                 }
             ]
         },
         {
-            "name": "vows_08_march",
-            "frame_file": "frames/frame-8-march.png",
-            "frame_width": 4630,
-            "frame_height": 6514,
+            "name": "April5",
+            "category": "Classic",
+            "frame_file": "d:/photobooth-app/frames/3.png",
+            "frame_width": 4419,
+            "frame_height": 6250,
             "slots": [
                 {
                     "points": {
                         "top_left": {
-                            "x_percent": 12.05,
-                            "y_percent": 8.94
+                            "x_percent": 9.49,
+                            "y_percent": 7.13
                         },
                         "top_right": {
-                            "x_percent": 88.94,
-                            "y_percent": 8.94
+                            "x_percent": 91.04,
+                            "y_percent": 7.13
                         },
                         "bottom_right": {
-                            "x_percent": 88.94,
-                            "y_percent": 42.51
+                            "x_percent": 91.04,
+                            "y_percent": 44.03
                         },
                         "bottom_left": {
-                            "x_percent": 12.05,
-                            "y_percent": 42.51
+                            "x_percent": 9.49,
+                            "y_percent": 44.03
                         }
                     }
                 }
-            ],
-            "category": "Classic"
+            ]
         },
         {
-            "name": "2image",
-            "frame_file": "frames/Thiết kế chưa có tên.png",
-            "frame_width": 1144,
-            "frame_height": 1728,
+            "name": "LayoutNgang",
+            "category": "Classic",
+            "frame_file": "d:/photobooth-app/frames/Happy Wedding.png",
+            "frame_width": 6250,
+            "frame_height": 4419,
             "slots": [
                 {
                     "points": {
                         "top_left": {
-                            "x_percent": 6.47,
-                            "y_percent": 4.75
+                            "x_percent": 7.11,
+                            "y_percent": 21.01
                         },
                         "top_right": {
-                            "x_percent": 91.96,
-                            "y_percent": 4.75
+                            "x_percent": 61.85,
+                            "y_percent": 21.01
                         },
                         "bottom_right": {
-                            "x_percent": 91.96,
-                            "y_percent": 38.19
+                            "x_percent": 61.85,
+                            "y_percent": 79.42
                         },
                         "bottom_left": {
-                            "x_percent": 6.47,
-                            "y_percent": 38.19
-                        }
-                    }
-                },
-                {
-                    "points": {
-                        "top_left": {
-                            "x_percent": 9.44,
-                            "y_percent": 45.08
-                        },
-                        "top_right": {
-                            "x_percent": 95.54,
-                            "y_percent": 45.08
-                        },
-                        "bottom_right": {
-                            "x_percent": 95.45,
-                            "y_percent": 78.24
-                        },
-                        "bottom_left": {
-                            "x_percent": 9.44,
-                            "y_percent": 78.24
+                            "x_percent": 7.11,
+                            "y_percent": 79.42
                         }
                     }
                 }
-            ],
-            "category": "Classic"
+            ]
+        },
+        {
+            "name": "April 4 Ngang",
+            "category": "Classic",
+            "frame_file": "d:/photobooth-app/frames/4t4 (2).png",
+            "frame_width": 8192,
+            "frame_height": 5455,
+            "slots": [
+                {
+                    "points": {
+                        "top_left": {
+                            "x_percent": 3.92,
+                            "y_percent": 20.52
+                        },
+                        "top_right": {
+                            "x_percent": 60.42,
+                            "y_percent": 20.52
+                        },
+                        "bottom_right": {
+                            "x_percent": 60.42,
+                            "y_percent": 83.97
+                        },
+                        "bottom_left": {
+                            "x_percent": 3.92,
+                            "y_percent": 83.97
+                        }
+                    }
+                }
+            ]
         }
     ]
 }

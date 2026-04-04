@@ -80,7 +80,7 @@ class VirtualKeyboard(ft.Column):
 class FletPhotoboothApp:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.page.title = "Photobooth Station Pro - Flet Edition"
+        self.page.title = "Vu ❤️ Hao - Photobooth Station Pro - Flet Edition"
         self.page.bgcolor = "white"
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
@@ -160,6 +160,8 @@ class FletPhotoboothApp:
             src_base64="R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
             fit=ft.ImageFit.COVER,
             expand=True,
+            width=float("inf"),
+            height=float("inf"),
             gapless_playback=True
         )
         self.countdown_overlay = ft.Container(
@@ -321,12 +323,14 @@ class FletPhotoboothApp:
             self.current_session = self.sessions[0]
             
         self.session_dropdown.value = self.current_session
+        self.camera_worker.set_session(self.current_session) # Ensure camera captures here
         self.update_qr_code()
         self.safe_update()
 
     def on_session_change(self, value):
         print(f"DEBUG: Session changed to {value}")
         self.current_session = value
+        self.camera_worker.set_session(value) # Ensure camera uses new session
         self.refresh_thumbnails()
         self.update_qr_code()
         self.safe_update()
@@ -412,7 +416,13 @@ class FletPhotoboothApp:
     def on_capture_click(self, e):
         # Route to Capture One flow if mode is active
         if config.CAPTURE_ONE_MODE:
-            self.on_capture_one_click()
+            selection = self.countdown_selector.value
+            if "Chụp ngay" in selection:
+                self.on_capture_one_click()
+            else:
+                m = re.search(r'(\d+)s', selection)
+                seconds = int(m.group(1)) if m else 3
+                threading.Thread(target=self.run_countdown, args=(seconds, True), daemon=True).start()
             return
 
         print(f"DEBUG: on_capture_click triggered. is_capturing={self.is_capturing}")
@@ -468,9 +478,32 @@ class FletPhotoboothApp:
             print(f"[C1] win32gui error: {ex}")
         return None, None
 
+    def _find_window_by_title(self, search_title):
+        """Find any window by title substring. Returns (hwnd, title)."""
+        try:
+            import win32gui
+            result = []
+            def enum_cb(hwnd, _):
+                if not win32gui.IsWindowVisible(hwnd):
+                    return
+                title = win32gui.GetWindowText(hwnd)
+                if search_title in title:
+                    result.append((hwnd, title))
+            win32gui.EnumWindows(enum_cb, None)
+            if result:
+                return result[0]
+        except:
+            pass
+        return None, None
+
     def on_capture_one_click(self):
         """Trigger Capture One instantly: find window → force focus → Ctrl+K → back to gallery."""
         import pyautogui
+        import win32gui
+
+        # ── Capture current Photobooth window handle BEFORE we lose focus ──
+        our_hwnd = win32gui.GetForegroundWindow()
+        print(f"[C1] Đã ghi nhớ HWND ứng dụng: {our_hwnd}")
 
         def _run():
             try:
@@ -507,10 +540,22 @@ class FletPhotoboothApp:
                 pyautogui.hotkey('ctrl', 'k')
                 print("[C1] ✅ Đã gửi Ctrl+K.")
 
-                # ── STEP 3: Navigate về gallery ngay (không chờ focus Photobooth) ──
+                # ── STEP 3: Navigate về gallery ngay và force focus Photobooth ──
                 self.page.go("/gallery")
                 self.safe_update()
-                print("[C1] ✅ Đã chuyển về Thư viện & Raw.")
+                
+                # Force App window to front (using the handle we captured earlier)
+                print(f"[C1] ✅ Đã chuyển về Thư viện & Raw. Đang đưa ứng dụng (HWND={our_hwnd}) về foreground...")
+                time.sleep(0.15) # Wait for route update
+                try:
+                    # Fallback win32 focus is much more reliable
+                    if our_hwnd:
+                        self._activate_window_fast(our_hwnd)
+                    else:
+                        self.page.window_to_front()
+                except Exception as focus_ex:
+                    print(f"[C1] ⚠️  Focus back failed: {focus_ex}")
+                    self.page.window_to_front()
 
             except Exception as ex:
                 print(f"[C1] ❌ Lỗi: {ex}")
@@ -534,7 +579,7 @@ class FletPhotoboothApp:
             seconds = int(m.group(1)) if m else 3
             threading.Thread(target=self.run_countdown, args=(seconds,), daemon=True).start()
 
-    def run_countdown(self, seconds):
+    def run_countdown(self, seconds, is_capture_one=False):
         self.countdown_overlay.visible = True
         for i in range(seconds, 0, -1):
             self.countdown_overlay.content.value = str(i)
@@ -542,7 +587,11 @@ class FletPhotoboothApp:
             time.sleep(1)
         self.countdown_overlay.visible = False
         self.safe_update()
-        self.camera_worker.request_capture()
+        
+        if is_capture_one:
+            self.on_capture_one_click()
+        else:
+            self.camera_worker.request_capture()
 
     def on_image_captured_worker(self, path):
         # Called after single capture
@@ -557,9 +606,6 @@ class FletPhotoboothApp:
             self.captured_sequence_paths.append(self.dialog_path)
             # Refresh thumbnails immediately so they see the photo in gallery
             self.refresh_thumbnails()
-            
-            # Sync to Nextcloud
-            threading.Thread(target=lambda: upload_to_nextcloud(vars(config), self.dialog_path, self.current_session), daemon=True).start()
             
             self.remaining_captures -= 1
             self.page.close(self.active_dialog)
@@ -606,36 +652,44 @@ class FletPhotoboothApp:
         last_session = None
         while True:
             try:
-                # 1. Move root files to session folder
+                # 1. Move root files to session folder (silent — no UI refresh needed here)
                 root_files = [f for f in os.listdir(config.RAW_DIR) if os.path.isfile(os.path.join(config.RAW_DIR, f)) and f.lower().endswith(('.png', '.jpg'))]
                 if root_files:
                     session_path = os.path.join(config.RAW_DIR, self.current_session)
                     os.makedirs(session_path, exist_ok=True)
                     for f in root_files:
-                        shutil.move(os.path.join(config.RAW_DIR, f), os.path.join(session_path, f))
-                
-                # 2. Watch current session folder for new files
+                        src_path = os.path.join(config.RAW_DIR, f)
+                        dst_path = os.path.join(session_path, f)
+                        shutil.move(src_path, dst_path)
+                        threading.Thread(target=lambda p=dst_path, s=self.current_session: upload_to_nextcloud(vars(config), p, s), daemon=True).start()
+                    print(f"[Monitor] Đã di chuyển {len(root_files)} file vào session '{self.current_session}'")
+
+                # 2. Watch current session folder — reset snapshot when session changes
                 if self.current_session != last_session:
                     last_known_files = set()
                     last_session = self.current_session
-                
+
                 session_path = os.path.join(config.RAW_DIR, self.current_session)
                 if os.path.exists(session_path):
-                    current_files = set([f for f in os.listdir(session_path) if f.lower().endswith(('.jpg', '.png'))])
+                    current_files = set(f for f in os.listdir(session_path) if f.lower().endswith(('.jpg', '.png')))
                     new_files = current_files - last_known_files
-                    
-                    if new_files or root_files:
+
+                    # Only refresh UI when there are genuinely new files AND we're on the gallery screen
+                    if new_files and self.page.route == "/gallery":
+                        print(f"[Monitor] {len(new_files)} ảnh mới phát hiện — cập nhật thư viện")
                         self.refresh_thumbnails()
-                        
+
                         # Auto-select the newest file
-                        if new_files:
-                            newest_file_name = max(new_files, key=lambda x: os.path.getmtime(os.path.join(session_path, x)))
-                            newest_file_path = os.path.join(session_path, newest_file_name)
-                            self.on_thumb_click(newest_file_path)
-                            
+                        newest_file_name = max(new_files, key=lambda x: os.path.getmtime(os.path.join(session_path, x)))
+                        newest_file_path = os.path.join(session_path, newest_file_name)
+                        self.on_thumb_click(newest_file_path)
+
+                    # Always update the known-files snapshot (even if not on gallery)
+                    if new_files:
                         last_known_files = current_files
+
             except Exception as e:
-                print(f"Monitor error: {e}")
+                print(f"[Monitor] Lỗi: {e}")
             time.sleep(1.5)
 
     def finish_sequence(self):
@@ -644,21 +698,17 @@ class FletPhotoboothApp:
         self.capture_progress_overlay.visible = False
         self.camera_worker.resume_preview()
         
-        # Auto-fill gallery slots if layout active
-        if not self.current_layout:
-            layouts = self.layout_manager.get_all_layouts()
-            if layouts:
-                self.current_layout = layouts[0]
-                print(f"DEBUG: Auto-selected layout: {self.current_layout['name']}")
-
-        if self.current_layout:
-            slots = len(self.current_layout.get("slots", []))
-            self.selected_slot_images = [None] * slots
-            for i in range(min(len(self.captured_sequence_paths), slots)):
-                self.selected_slot_images[i] = self.captured_sequence_paths[i]
-            
-            # Prepare preview before navigating
-            self.update_processed_preview()
+        # Mặc định không sử dụng layout (None) trừ khi user đã chọn trước đó
+        # Tự động gán các slot tương ứng với danh sách ảnh vừa chụp
+        slots = len(self.current_layout.get("slots", [])) if self.current_layout else len(self.captured_sequence_paths)
+        if slots == 0: slots = 1
+        
+        self.selected_slot_images = [None] * slots
+        for i in range(min(len(self.captured_sequence_paths), slots)):
+            self.selected_slot_images[i] = self.captured_sequence_paths[i]
+        
+        # Prepare preview before navigating
+        self.update_processed_preview()
         
         self.page.go("/gallery")
 
@@ -780,20 +830,113 @@ class FletPhotoboothApp:
                 break
 
     def handle_print(self, _):
+        """In trực tiếp đến máy in mặc định, không hiện dialog."""
+        # ── Chuẩn bị ảnh đầu ra ─────────────────────────────────────────────
         out_path = self.processed_image
         if not out_path and self.current_layout:
             try:
-                out_path = ImageProcessor.apply_frame(self.selected_slot_images, self.current_layout, preview_mode=False)
+                out_path = ImageProcessor.apply_frame(
+                    self.selected_slot_images, self.current_layout, preview_mode=False
+                )
                 self.processed_image = out_path
             except Exception as e:
-                self.page.snack_bar = ft.SnackBar(ft.Text(f"Lỗi tạo ảnh in: {e}"), bgcolor="red"); self.page.snack_bar.open=True; self.safe_update()
+                self.page.snack_bar = ft.SnackBar(ft.Text(f"Lỗi tạo ảnh in: {e}"), bgcolor="red")
+                self.page.snack_bar.open = True
+                self.safe_update()
                 return
         elif not out_path and not self.current_layout and self.selected_slot_images:
             out_path = self.selected_slot_images[0]
-            
-        if out_path:
-            self.page.snack_bar = ft.SnackBar(ft.Text("Đang gửi lệnh in... 🖨️", color="white")); self.page.snack_bar.open=True; self.safe_update()
-            PrinterService.print_image(out_path)
+
+        if not out_path:
+            self.page.snack_bar = ft.SnackBar(ft.Text("⚠️ Chưa có ảnh để in!"), bgcolor="orange")
+            self.page.snack_bar.open = True
+            self.safe_update()
+            return
+
+        # Thông báo đang gửi in
+        self.page.snack_bar = ft.SnackBar(ft.Text("🖨️ Đang gửi lệnh in...", color="white"), bgcolor=COLOR_TEAL_DARK)
+        self.page.snack_bar.open = True
+        self.safe_update()
+
+        # Lưu file vào thư mục phiên + upload + in — tất cả trong background thread
+        session = self.current_session
+        def _print_worker():
+            try:
+                # 1. Lưu bản FINAL vào thư mục phiên (giống handle_save)
+                final_dir = os.path.join(config.RAW_DIR, session)
+                os.makedirs(final_dir, exist_ok=True)
+                filename = f"FINAL_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+                final_path = os.path.join(final_dir, filename)
+                shutil.copy2(out_path, final_path)
+
+                # 2. Upload lên Nextcloud/Drive
+                threading.Thread(
+                    target=lambda: upload_to_nextcloud(vars(config), final_path, session),
+                    daemon=True
+                ).start()
+
+                # 3. In ảnh
+                PrinterService.print_image(final_path)
+
+                # 4. Hiện dialog thành công với nút OK → về màn hình chụp
+                def _go_home(_=None):
+                    try:
+                        self.page.close(self.active_dialog)
+                    except:
+                        pass
+                    
+                    self.selected_slot_images = []
+                    self.processed_image = None
+
+                    # Khởi tạo một task trễ một chút để Flet đóng dialog sạch sẽ trước khi đổi Route, tránh lỗi màn hình đen (mất reference camera_view)
+                    import time
+                    def _nav():
+                        time.sleep(0.1)
+                        self.page.go("/")
+                        self.safe_update()
+                        if hasattr(self, 'camera_worker'):
+                            self.camera_worker.resume_preview()
+
+                    import threading
+                    threading.Thread(target=_nav, daemon=True).start()
+
+                success_dialog = ft.AlertDialog(
+                    modal=True,
+                    title=ft.Row([
+                        ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color="green", size=32),
+                        ft.Text(" In thành công!", weight="bold", size=20, color=COLOR_TEAL_DARK),
+                    ], spacing=8),
+                    content=ft.Container(
+                        width=380,
+                        content=ft.Column([
+                            ft.Text("Ảnh đã được gửi đến máy in 🖨️", size=15),
+                            ft.Text("và đang tải lên đám mây ☁️", size=15),
+                        ], spacing=6, tight=True),
+                    ),
+                    actions=[
+                        ft.ElevatedButton(
+                            "OK  →",
+                            on_click=_go_home,
+                            bgcolor=COLOR_PEACH_PRIMARY,
+                            color="white",
+                            style=ft.ButtonStyle(
+                                shape=ft.RoundedRectangleBorder(radius=10),
+                                padding=ft.padding.symmetric(horizontal=30, vertical=14),
+                            ),
+                        )
+                    ],
+                    actions_alignment=ft.MainAxisAlignment.CENTER,
+                )
+                self.active_dialog = success_dialog
+                self.page.open(success_dialog)
+                self.safe_update()
+
+            except Exception as e:
+                self.page.snack_bar = ft.SnackBar(ft.Text(f"❌ Lỗi in: {e}"), bgcolor="red")
+                self.page.snack_bar.open = True
+                self.safe_update()
+
+        threading.Thread(target=_print_worker, daemon=True).start()
 
     def handle_save(self, _):
         out_path = self.processed_image
@@ -804,24 +947,69 @@ class FletPhotoboothApp:
             except Exception as e:
                 self.page.snack_bar = ft.SnackBar(ft.Text(f"Lỗi lưu ảnh: {e}"), bgcolor="red"); self.page.snack_bar.open=True; self.safe_update()
                 return
-        
+        elif not out_path and not self.current_layout and self.selected_slot_images:
+            out_path = self.selected_slot_images[0]
+            
         if out_path:
-            self.page.snack_bar = ft.SnackBar(ft.Text(f"✅ Đã lưu file chất lượng cao: {os.path.basename(out_path)}"), bgcolor="green")
-            self.page.snack_bar.open=True
-            self.safe_update()
+            try:
+                # Đổi từ CAPTURES_DIR sang RAW_DIR để đưa vào đúng folder phiên local (gallery có thể hiển thị/đọc được)
+                final_dir = os.path.join(config.RAW_DIR, self.current_session)
+                os.makedirs(final_dir, exist_ok=True)
+                
+                filename = f"FINAL_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
+                final_path = os.path.join(final_dir, filename)
+                
+                shutil.copy2(out_path, final_path)
+                
+                # Upload to Nextcloud
+                threading.Thread(target=lambda: upload_to_nextcloud(vars(config), final_path, self.current_session), daemon=True).start()
+                
+                self.page.snack_bar = ft.SnackBar(ft.Text(f"✅ Đã lưu file thành công và đang tải lên đám mây..."), bgcolor="green")
+                self.page.snack_bar.open=True
+                
+                # Clear selection & Go back Home
+                self.selected_slot_images = []
+                self.processed_image = None
+                self.page.go("/")
+                self.safe_update()
+            except Exception as e:
+                self.page.snack_bar = ft.SnackBar(ft.Text(f"Lỗi copy file: {e}"), bgcolor="red")
+                self.page.snack_bar.open=True
+                self.safe_update()
+
+    def _get_thumbnail_b64(self, fpath) -> str:
+        """Trả về base64 của thumbnail nhỏ (200x150px), tạo cache nếu chưa có."""
+        try:
+            cache_dir = os.path.join(os.path.dirname(fpath), ".thumbcache")
+            os.makedirs(cache_dir, exist_ok=True)
+            thumb_path = os.path.join(cache_dir, os.path.basename(fpath) + ".thumb.jpg")
+            
+            # Tái sử dụng cache nếu đã tồn tại và source chưa thay đổi
+            if os.path.exists(thumb_path) and os.path.getmtime(thumb_path) >= os.path.getmtime(fpath):
+                with open(thumb_path, "rb") as f:
+                    return base64.b64encode(f.read()).decode()
+            
+            # Tạo thumbnail mới bằng Pillow (chỉ 200x150)
+            img = PILImage.open(fpath)
+            img = img.convert("RGB")  # Đảm bảo không có alpha channel làm chậm
+            img.thumbnail((200, 150), PILImage.Resampling.LANCZOS)
+            img.save(thumb_path, format="JPEG", quality=75, optimize=True)
+            with open(thumb_path, "rb") as f:
+                return base64.b64encode(f.read()).decode()
+        except Exception:
+            return None
 
     def refresh_thumbnails(self):
         self.gallery_grid.controls.clear()
         path = os.path.join(config.RAW_DIR, self.current_session)
         if os.path.exists(path):
-            files = sorted([f for f in os.listdir(path) if f.lower().endswith(('.jpg', '.png'))], key=lambda x: os.path.getmtime(os.path.join(path, x)), reverse=True)
+            all_files = [f for f in os.listdir(path) if f.lower().endswith(('.jpg', '.png'))]
+            # Giới hạn 50 ảnh mới nhất để tránh ngốn RAM
+            files = sorted(all_files, key=lambda x: os.path.getmtime(os.path.join(path, x)), reverse=True)[:50]
             for f in files:
                 fpath = os.path.join(path, f)
-                b64 = None
-                try:
-                    with open(fpath, "rb") as img_f:
-                        b64 = base64.b64encode(img_f.read()).decode()
-                except: pass
+                # Dùng thumbnail nhỏ thay vì full-res để tiết kiệm RAM
+                b64 = self._get_thumbnail_b64(fpath)
                 
                 self.gallery_grid.controls.append(
                     ft.GestureDetector(
@@ -999,8 +1187,14 @@ class FletPhotoboothApp:
             border_radius=15,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
             content=ft.Stack([
-                # Stack fills the container; COVER mode ensures no black bars
-                self.camera_view,
+                # Positioned to fill the whole space
+                ft.Container(
+                    content=self.camera_view,
+                    expand=True,
+                    padding=0,
+                    margin=0,
+                    alignment=ft.alignment.center
+                ),
                 ft.Container(self.countdown_overlay, alignment=ft.alignment.center),
                 self.capture_progress_overlay
             ])
@@ -1024,8 +1218,6 @@ class FletPhotoboothApp:
                     expand=True,
                     border_radius=15,
                     clip_behavior=ft.ClipBehavior.HARD_EDGE,
-                    # Enforce 3:2 aspect ratio by keeping image centered
-                    alignment=ft.alignment.center,
                 )
             ], spacing=15, expand=True)
         )
@@ -1078,7 +1270,7 @@ class FletPhotoboothApp:
                     padding=ft.padding.all(15),
                     content=ft.Column([
                         ft.Container(
-                            content=ft.Text("🍑 PHOTOBOOTH STATION", size=50, weight="bold", color=COLOR_TEAL_DARK),
+                            content=ft.Text("VU ❤️ HAO - PHOTOBOOTH STATION", size=50, weight="bold", color=COLOR_TEAL_DARK),
                             alignment=ft.alignment.center,
                             margin=ft.margin.only(bottom=15)
                         ),

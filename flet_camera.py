@@ -94,17 +94,7 @@ class FletCameraWorker(threading.Thread):
         # Optimize resolution for quality: Match screen size as much as possible
         # Since the app uses large glass cards, we need high-res preview to avoid blur.
         h, w = frame_bgr.shape[:2]
-        target_h = 1080 # FULL HD resolution for the preview to match UI size
-        if h > target_h:
-            scale = target_h / h
-            target_w = int(w * scale)
-            preview_frame = cv2.resize(frame_bgr, (target_w, target_h), interpolation=cv2.INTER_AREA)
-        else:
-            preview_frame = frame_bgr
-
-        # Optimize resolution: 800p provides a bit more detail than 720p while staying smooth
-        h, w = frame_bgr.shape[:2]
-        target_h = 800 
+        target_h = 720 # 720p đủ cho preview — giảm RAM ~55% so với 1080p
         if h > target_h:
             scale = target_h / h
             target_w = int(w * scale)
