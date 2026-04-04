@@ -48,3 +48,5 @@ assets/
 # OS
 .DS_Store
 Thumbs.db
+push_code.bat
+*.bat
